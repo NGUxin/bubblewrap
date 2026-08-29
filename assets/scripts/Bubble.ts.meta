@@ -1,0 +1,13 @@
+{
+  "ver": "4.0.24",
+  "importer": "typescript",
+  "imported": true,
+  "uuid": "e743c676-1a9d-9161-9f05-7a6a3ffeea59",
+  "files": [],
+  "subMetas": {},
+  "userData": {
+    "moduleId": "project:///assets/scripts/Bubble.js",
+    "importerSettings": 7,
+    "simulateGlobals": []
+  }
+}

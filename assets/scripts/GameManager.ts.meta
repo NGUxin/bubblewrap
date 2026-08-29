@@ -1,0 +1,13 @@
+{
+  "ver": "4.0.24",
+  "importer": "typescript",
+  "imported": true,
+  "uuid": "718b8521-444d-6507-b3ac-8d0a0203499b",
+  "files": [],
+  "subMetas": {},
+  "userData": {
+    "moduleId": "project:///assets/scripts/GameManager.js",
+    "importerSettings": 7,
+    "simulateGlobals": []
+  }
+}
