@@ -29,7 +29,7 @@ interface LevelConfig {
 // 点 → 线 → 面 → 节奏 → 爆发（依据《关卡设计表》迭代）
 const LEVELS: LevelConfig[] = [
     {
-        num: '1-1', theme: '空', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
+        num: '1-1', theme: '认色', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
         narrative: '在整齐的泡泡纸中，寻找指定颜色。',
         outro: '棋盘开始变化——新的泡泡会不断补上。',
         gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
@@ -37,7 +37,7 @@ const LEVELS: LevelConfig[] = [
         targetCount: 24, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-2', theme: '线', keywords: '动态刷新 · 红黄蓝青 · 持续寻找',
+        num: '1-2', theme: '流动', keywords: '动态刷新 · 红黄蓝青 · 持续寻找',
         narrative: '每捏破一个，就会有新的泡泡补上。',
         outro: '泡泡在流动了——现在，时间开始计时。',
         gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue', 'cyan'],
@@ -45,7 +45,7 @@ const LEVELS: LevelConfig[] = [
         targetCount: 30, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-3', theme: '面', keywords: '倒计时 · 动态刷新 · 5色',
+        num: '1-3', theme: '限时', keywords: '倒计时 · 动态刷新 · 五色',
         narrative: '在有限时间里，尽可能完成颜色队列。',
         outro: '彩虹泡泡出现了——它们能匹配任意颜色。',
         gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue', 'cyan', 'green'],
@@ -53,7 +53,7 @@ const LEVELS: LevelConfig[] = [
         targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-4', theme: '节奏', keywords: '彩虹泡泡 · 7色 · 连击',
+        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 七色 · 连击',
         narrative: '彩虹泡泡能匹配队列中的任意颜色。',
         outro: '节拍已就绪——最后的连锁爆发即将到来。',
         gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet'],
@@ -152,8 +152,6 @@ export class GameManager extends Component {
 
     // 音频
     private clips: Record<string, AudioClip | null> = {};
-    private audioPool: AudioSource[] = [];
-    private audioCursor = 0;
 
     // HUD
     private titleLabel: Label = null!;
@@ -230,16 +228,6 @@ export class GameManager extends Component {
                 if (!err && sf) BUBBLE_FRAMES[k] = sf;
             });
         });
-        // 音频池：保证连续/连锁击破时声音不互相打断
-        const root = new Node('AudioPool');
-        root.layer = Layers.Enum.UI_2D;
-        this.node.addChild(root);
-        for (let i = 0; i < 6; i++) {
-            const src = root.addComponent(AudioSource);
-            src.volume = 1;
-            src.loop = false;
-            this.audioPool.push(src);
-        }
         // 保险：首次 preload 若失败，强制重载，保证声音可播
         this.scheduleOnce(() => {
             const clip = this.popAudio.clip;
@@ -254,17 +242,11 @@ export class GameManager extends Component {
     private playClip(key: string, pitch: number) {
         const clip = this.clips[key];
         try {
-            // 轮询选择音源，确保每个颜色都播放自己的音频（不回落旧音效）
-            const src = this.audioPool[this.audioCursor % this.audioPool.length];
-            this.audioCursor++;
-            src.stop();
-            src.clip = clip || this.popAudio.clip;   // 颜色音频未就绪时兜底，保证永远有声
-            src.pitch = Math.max(0.5, Math.min(pitch, 2.0));
-            src.play();
-            // 颜色音频就绪后，同步给主音源换 clip（下次播放即生效）
-            if (clip && this.popAudio.clip !== clip) {
-                this.popAudio.clip = clip;
-            }
+            // 统一走场景绑定主音源（抖音/Web 均验证可用），每击切换对应颜色 clip
+            this.popAudio.stop();
+            if (clip) this.popAudio.clip = clip;   // 颜色音频未就绪时保持旧 clip，保证有声
+            this.popAudio.pitch = Math.max(0.5, Math.min(pitch, 2.0));
+            this.popAudio.play();
         } catch { /* 无音频设备时静默 */ }
     }
 
@@ -289,19 +271,17 @@ export class GameManager extends Component {
                 }
             },
         });
-        if (hasProgress) {
-            buttons.push({
-                label: '从头开始',
-                action: () => {
-                    writeSave({ unlocked: 0, completed: [], bestCombo: 0 });
-                    this.maxUnlocked = 0;
-                    this.drawProgress();
-                    this.hideOverlay();
-                    this.loadLevel(0);
-                },
-            });
-        }
-        this.showOverlay('泡泡纸', '点 · 线 · 面 · 节奏 · 爆发', buttons);
+        buttons.push({
+            label: '从头开始',
+            action: () => {
+                writeSave({ unlocked: 0, completed: [], bestCombo: 0 });
+                this.maxUnlocked = 0;
+                this.drawProgress();
+                this.hideOverlay();
+                this.loadLevel(0);
+            },
+        });
+        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹 · 爆发', buttons);
     }
 
     private firstIncomplete(save: SaveData): number {
