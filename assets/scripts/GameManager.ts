@@ -53,18 +53,18 @@ const LEVELS: LevelConfig[] = [
         targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 七色 · 连击',
+        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 三色 · 连击',
         narrative: '彩虹泡泡能匹配队列中的任意颜色。',
         outro: '节拍已就绪——最后的连锁爆发即将到来。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet'],
+        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
         dynamic: true, rainbow: true, timeLimit: 50, timeBonus: 0.8,
         targetCount: 40, combo: true, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-5', theme: '爆发', keywords: '7色 · 彩虹 · 同色连锁 · 倒计时',
+        num: '1-5', theme: '爆发', keywords: '三色 · 彩虹 · 同色连锁 · 倒计时',
         narrative: '积累的一切，只为这一刻的连锁爆发。',
         outro: '全部通关！五段爆裂之旅，圆满落幕。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet'],
+        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
         dynamic: true, rainbow: true, timeLimit: 55, timeBonus: 0.7,
         targetCount: 48, combo: true, chain: true, bubbleScale: 0.95,
     },
@@ -297,6 +297,11 @@ export class GameManager extends Component {
         this.currentLevel = index;
         const cfg = LEVELS[index];
         this.clearBubbles();
+
+        // 隐藏场景遗留的 ResetBtn：它躺在底部与泡泡重叠，误触会"重启"关卡
+        // （重新开始统一由结算/超时弹层与标题屏提供）
+        const sceneReset = this.node.getChildByName('ResetBtn');
+        if (sceneReset) sceneReset.active = false;
 
         this.queueIdx = 0;
         this.combo = 0;
