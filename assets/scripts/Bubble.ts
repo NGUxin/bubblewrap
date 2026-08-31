@@ -1,5 +1,5 @@
 import { _decorator, Component, Sprite, SpriteFrame, Color, tween, Vec3 } from 'cc';
-import { COLORS, RAINBOW_SEQ } from './ColorDefs';
+import { COLORS, RAINBOW_SEQ, BUBBLE_FRAMES } from './ColorDefs';
 const { ccclass, property } = _decorator;
 
 @ccclass('Bubble')
@@ -39,7 +39,15 @@ export class Bubble extends Component {
         tween(this.sprite).stop();
         const sp = this.getComponent(Sprite)!;
         this.sprite = sp;
-        sp.color = COLORS[key] ? COLORS[key].tint : Color.WHITE;
+        const frame = BUBBLE_FRAMES[key];
+        if (frame) {
+            // 使用烘焙好的彩色立体泡泡纹理，保持高光与膜面质感
+            sp.spriteFrame = frame;
+            sp.color = Color.WHITE;
+        } else {
+            // 纹理尚未加载完时的兜底：整体染色
+            sp.color = COLORS[key] ? COLORS[key].tint : Color.WHITE;
+        }
     }
 
     /** 设置为彩虹泡泡：颜色循环流动，可匹配任意目标色 */

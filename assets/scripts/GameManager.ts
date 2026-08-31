@@ -1,10 +1,10 @@
 import {
     _decorator, Component, Node, instantiate, Vec3, Vec2, AudioSource, AudioClip,
     randomRange, randomRangeInt, UITransform, input, Input, EventTouch, tween, Layers,
-    Label, Color, Sprite, Graphics, Button, BlockInputEvents, resources,
+    Label, Color, Sprite, SpriteFrame, Graphics, Button, BlockInputEvents, resources,
 } from 'cc';
 import { Bubble } from './Bubble';
-import { COLORS, RAINBOW_AUDIO } from './ColorDefs';
+import { COLORS, RAINBOW_AUDIO, BUBBLE_FRAMES } from './ColorDefs';
 const { ccclass, property } = _decorator;
 
 interface LevelConfig {
@@ -29,18 +29,18 @@ interface LevelConfig {
 // 点 → 线 → 面 → 节奏 → 爆发（依据《关卡设计表》迭代）
 const LEVELS: LevelConfig[] = [
     {
-        num: '1-1', theme: '空', keywords: '3色 · 静态棋盘 · 颜色队列',
+        num: '1-1', theme: '空', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
         narrative: '在整齐的泡泡纸中，寻找指定颜色。',
         outro: '棋盘开始变化——新的泡泡会不断补上。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow'],
+        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
         dynamic: false, rainbow: false, timeLimit: 0, timeBonus: 0,
         targetCount: 24, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-2', theme: '线', keywords: '动态刷新 · 4色 · 持续寻找',
+        num: '1-2', theme: '线', keywords: '动态刷新 · 红黄蓝青 · 持续寻找',
         narrative: '每捏破一个，就会有新的泡泡补上。',
         outro: '泡泡在流动了——现在，时间开始计时。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green'],
+        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue', 'cyan'],
         dynamic: true, rainbow: false, timeLimit: 0, timeBonus: 0,
         targetCount: 30, combo: false, chain: false, bubbleScale: 0.95,
     },
@@ -48,7 +48,7 @@ const LEVELS: LevelConfig[] = [
         num: '1-3', theme: '面', keywords: '倒计时 · 动态刷新 · 5色',
         narrative: '在有限时间里，尽可能完成颜色队列。',
         outro: '彩虹泡泡出现了——它们能匹配任意颜色。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan'],
+        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue', 'cyan', 'green'],
         dynamic: true, rainbow: false, timeLimit: 45, timeBonus: 0.8,
         targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
     },
@@ -146,10 +146,9 @@ export class GameManager extends Component {
     private queue: string[] = [];
     private queueIdx = 0;
     private targetBar: Node = null!;
+    private targetStrip: Node = null!;
     private targetSlots: Node[] = [];
-    private slotStep = 62;
-    private barBusy = false;
-    private barPending = 0;
+    private slotStep = 40;
 
     // 音频
     private clips: Record<string, AudioClip | null> = {};
@@ -211,6 +210,12 @@ export class GameManager extends Component {
         keys.forEach((k) => {
             resources.load(`audio/${k}`, AudioClip, (err, clip) => {
                 if (!err && clip) this.clips[k] = clip;
+            });
+        });
+        // 彩色泡泡纹理（保留立体高光的烘焙纹理）
+        Object.keys(COLORS).forEach((k) => {
+            resources.load(`bubbles/bubble_${k}/spriteFrame`, SpriteFrame, (err, sf) => {
+                if (!err && sf) BUBBLE_FRAMES[k] = sf;
             });
         });
         // 音频池：保证连续/连锁击破时声音不互相打断
@@ -398,10 +403,21 @@ export class GameManager extends Component {
     }
 
     private renderTargetBar() {
+        // 完整队列：每个目标一个槽位，长条向左滑动
+        this.targetStrip.removeAllChildren();
+        this.targetSlots.length = 0;
+        const cfg = LEVELS[this.currentLevel];
         const step = this.slotStep;
-        for (let i = 0; i < 5; i++) {
-            this.targetSlots[i].setPosition((i - 2) * step, 0, 0);
+        for (let i = 0; i < cfg.targetCount; i++) {
+            const slot = new Node(`T${i}`);
+            slot.layer = Layers.Enum.UI_2D;
+            slot.addComponent(UITransform).setContentSize(34, 34);
+            slot.setPosition(i * step, 0, 0);
+            slot.addComponent(Graphics);
+            this.targetStrip.addChild(slot);
+            this.targetSlots.push(slot);
         }
+        this.targetStrip.setPosition(0, 0, 0);
         this.highlightCurrent();
     }
 
@@ -410,7 +426,7 @@ export class GameManager extends Component {
             const node = this.targetSlots[i];
             const g = node.getComponent(Graphics)!;
             const isCur = i === 0;
-            node.setScale(isCur ? 1.18 : 1, isCur ? 1.18 : 1, 1);
+            node.setScale(isCur ? 1.35 : 1, isCur ? 1.35 : 1, 1);
             const idx = this.queueIdx + i;
             const key = idx < this.queue.length ? this.queue[idx] : '';
             g.clear();
@@ -418,44 +434,28 @@ export class GameManager extends Component {
                 const tint = COLORS[key].tint.clone();
                 tint.a = isCur ? 255 : 130;
                 g.fillColor = tint;
-                g.circle(0, 0, 24);
+                g.circle(0, 0, 15);
                 g.fill();
             }
             // 高亮当前：白色圆环
             if (isCur) {
                 g.lineWidth = 5;
                 g.strokeColor = new Color(255, 255, 255, 255);
-                g.circle(0, 0, 27);
+                g.circle(0, 0, 18);
                 g.stroke();
             }
         }
+        // 让当前目标保持在屏幕中央（整体左滑）
+        const step = this.slotStep;
+        tween(this.targetStrip).stop();
+        tween(this.targetStrip).to(0.18, { position: new Vec3(-this.queueIdx * step, 0, 0) }, { easing: 'quadOut' }).start();
     }
 
     private advanceQueue() {
         this.queueIdx++;
         const cfg = LEVELS[this.currentLevel];
         this.remainLabel.string = `剩余 ${Math.max(cfg.targetCount - this.queueIdx, 0)}`;
-        if (this.barBusy) {
-            this.barPending++;
-            return;
-        }
-        this.barBusy = true;
-        // 滑动动画：所有槽位左移，最左滚到最右并填入新颜色
-        const step = this.slotStep;
-        const nodes = this.targetSlots;
-        nodes.forEach((n) => {
-            tween(n).by(0.18, { position: new Vec3(-step, 0, 0) }, { easing: 'quadOut' }).start();
-        });
-        this.scheduleOnce(() => {
-            const first = nodes.shift()!;
-            nodes.push(first);
-            this.renderTargetBar();
-            this.barBusy = false;
-            if (this.barPending > 0) {
-                this.barPending--;
-                this.advanceQueue();
-            }
-        }, 0.18);
+        this.highlightCurrent();
     }
 
     // ---------------- 交互 ----------------
@@ -645,21 +645,14 @@ export class GameManager extends Component {
         // 顶部目标颜色队列
         this.targetBar = new Node('TargetBar');
         this.targetBar.layer = Layers.Enum.UI_2D;
-        this.targetBar.addComponent(UITransform).setContentSize(360, 70);
+        this.targetBar.addComponent(UITransform).setContentSize(720, 70);
         this.targetBar.setPosition(0, 500, 0);
         this.node.addChild(this.targetBar);
-        for (let i = 0; i < 5; i++) {
-            const slot = new Node(`Slot${i}`);
-            slot.layer = Layers.Enum.UI_2D;
-            slot.addComponent(UITransform).setContentSize(60, 60);
-            slot.setPosition((i - 2) * this.slotStep, 0, 0);
-            const g = slot.addComponent(Graphics);
-            g.fillColor = new Color(200, 215, 230, 255);
-            g.circle(0, 0, 24);
-            g.fill();
-            this.targetBar.addChild(slot);
-            this.targetSlots.push(slot);
-        }
+        this.targetStrip = new Node('TargetStrip');
+        this.targetStrip.layer = Layers.Enum.UI_2D;
+        this.targetStrip.addComponent(UITransform).setContentSize(2400, 70);
+        this.targetStrip.setPosition(0, 0, 0);
+        this.targetBar.addChild(this.targetStrip);
 
         // 关卡进度圆点
         const prog = new Node('Progress');
