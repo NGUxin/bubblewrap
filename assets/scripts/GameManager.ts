@@ -53,20 +53,12 @@ const LEVELS: LevelConfig[] = [
         targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 三色 · 连击',
+        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 三色',
         narrative: '彩虹泡泡能匹配队列中的任意颜色。',
-        outro: '节拍已就绪——最后的连锁爆发即将到来。',
+        outro: '全部通关！四段爆裂之旅，圆满落幕。',
         gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
-        dynamic: true, rainbow: true, timeLimit: 50, timeBonus: 0.8,
-        targetCount: 40, combo: true, chain: false, bubbleScale: 0.95,
-    },
-    {
-        num: '1-5', theme: '爆发', keywords: '三色 · 彩虹 · 同色连锁 · 倒计时',
-        narrative: '积累的一切，只为这一刻的连锁爆发。',
-        outro: '全部通关！五段爆裂之旅，圆满落幕。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
-        dynamic: true, rainbow: true, timeLimit: 55, timeBonus: 0.7,
-        targetCount: 48, combo: true, chain: true, bubbleScale: 0.95,
+        dynamic: true, rainbow: true, timeLimit: 0, timeBonus: 0,
+        targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
     },
 ];
 
@@ -186,6 +178,11 @@ export class GameManager extends Component {
         this.buildHud();
         this.loadAllAudio();
         this.showTitle();
+        // 全局错误兜底：单次异常不导致整个游戏重启（抖音运行时偶发）
+        const g = globalThis as any;
+        if (g.tt && g.tt.onError) {
+            try { g.tt.onError((e: any) => console.error('[BubbleWrap] tt error:', e && e.errMsg)); } catch { /* ignore */ }
+        }
     }
 
     update(dt: number) {
@@ -240,11 +237,12 @@ export class GameManager extends Component {
     }
 
     private playClip(key: string, pitch: number) {
-        const clip = this.clips[key];
         try {
-            // 统一走场景绑定主音源（抖音/Web 均验证可用），每击切换对应颜色 clip
-            this.popAudio.stop();
-            if (clip) this.popAudio.clip = clip;   // 颜色音频未就绪时保持旧 clip，保证有声
+            // 统一走场景绑定主音源（抖音/Web 均验证可用）
+            const clip = this.clips[key];
+            if (clip && this.popAudio.clip !== clip) {
+                this.popAudio.clip = clip;   // 颜色音频就绪时换专属音色；未就绪则沿用旧 clip
+            }
             this.popAudio.pitch = Math.max(0.5, Math.min(pitch, 2.0));
             this.popAudio.play();
         } catch { /* 无音频设备时静默 */ }
@@ -281,7 +279,7 @@ export class GameManager extends Component {
                 this.loadLevel(0);
             },
         });
-        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹 · 爆发', buttons);
+        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹', buttons);
     }
 
     private firstIncomplete(save: SaveData): number {
@@ -470,86 +468,85 @@ export class GameManager extends Component {
     // ---------------- 交互 ----------------
 
     onTouch(event: EventTouch) {
-        if (!this.playing) return;
-        const cfg = LEVELS[this.currentLevel];
-        const target = this.queue[this.queueIdx];
-        const uiPos: Vec2 = event.getUILocation();
-        const local = this.bubbleContainer
-            .getComponent(UITransform)!
-            .convertToNodeSpaceAR(new Vec3(uiPos.x, uiPos.y, 0));
-        for (const bubble of this.bubbleList) {
-            const comp = bubble.getComponent(Bubble);
-            if (!comp || comp.isPopped) continue;
-            const scale = bubble.scale.x;
-            const pos = bubble.position;
-            const dx = local.x - pos.x;
-            const dy = local.y - pos.y;
-            const r = this.bubbleRadius * scale;
-            if (dx * dx + dy * dy <= r * r) {
-                const matched = comp.rainbow || comp.color === target;
-                if (matched) {
-                    comp.pop();
-                } else if (cfg.dynamic) {
-                    // 动态关卡：点错也会破裂并原位刷新
-                    comp.pop();
-                } else {
-                    // 教学关卡：点错不破裂，柔和提示
-                    this.playClip('wrong', 1);
-                    comp.shake();
+        try {
+            if (!this.playing) return;
+            const cfg = LEVELS[this.currentLevel];
+            const target = this.queue[this.queueIdx];
+            const uiPos: Vec2 = event.getUILocation();
+            const local = this.bubbleContainer
+                .getComponent(UITransform)!
+                .convertToNodeSpaceAR(new Vec3(uiPos.x, uiPos.y, 0));
+            for (const bubble of this.bubbleList) {
+                const comp = bubble.getComponent(Bubble);
+                if (!comp || comp.isPopped) continue;
+                const scale = bubble.scale.x;
+                const pos = bubble.position;
+                const dx = local.x - pos.x;
+                const dy = local.y - pos.y;
+                const r = this.bubbleRadius * scale;
+                if (dx * dx + dy * dy <= r * r) {
+                    const matched = comp.rainbow || comp.color === target;
+                    if (matched) {
+                        comp.pop();
+                    } else if (cfg.dynamic) {
+                        // 动态关卡：点错也会破裂并原位刷新
+                        comp.pop();
+                    } else {
+                        // 教学关卡：点错不破裂，柔和提示
+                        this.playClip('wrong', 0.55);
+                        comp.shake();
+                    }
                 }
             }
+        } catch (e) {
+            console.error('[BubbleWrap] touch err', e);
         }
     }
 
     onBubblePop(pos: Vec3, node: Node, colorKey: string, isRainbow: boolean) {
-        const cfg = LEVELS[this.currentLevel];
-        const target = this.queue[this.queueIdx];
-        const matched = isRainbow || colorKey === target;
-        const fromChain = !!(node as any).__chain;
-        (node as any).__chain = false;
+        try {
+            const cfg = LEVELS[this.currentLevel];
+            const target = this.queue[this.queueIdx];
+            const matched = isRainbow || colorKey === target;
+            const fromChain = !!(node as any).__chain;
+            (node as any).__chain = false;
 
-        if (matched) {
-            // 连击
-            if (cfg.combo) {
-                const now = Date.now() / 1000;
-                this.combo = (now - this.lastPopTime < 0.8) ? this.combo + 1 : 1;
-                this.lastPopTime = now;
-                this.comboLabel.string = this.combo >= 2 ? `COMBO x${this.combo}` : '';
+            if (matched) {
+                const pitch = (isRainbow ? 1.5 : COLORS[colorKey].pitch);
+                this.playClip(isRainbow ? RAINBOW_AUDIO : colorKey, pitch);
+
+                if (cfg.timeBonus > 0 && this.timerLeft > 0) {
+                    this.timerLeft = Math.min(this.timerLeft + cfg.timeBonus, cfg.timeLimit);
+                    this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
+                }
+
+                if (cfg.chain && !fromChain && !isRainbow) {
+                    this.chainSameColor(node, colorKey);
+                }
+
+                this.advanceQueue();
+            } else {
+                this.playClip('wrong', 0.55);
+                if (cfg.timeLimit > 0) {
+                    this.timerLeft = Math.max(0, this.timerLeft - 1);
+                    this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
+                }
             }
-            const pitch = (isRainbow ? 1.2 : COLORS[colorKey].pitch)
-                * (cfg.combo ? Math.min(1 + (this.combo - 1) * 0.04, 1.6) : 1);
-            this.playClip(isRainbow ? RAINBOW_AUDIO : colorKey, pitch);
 
-            if (cfg.timeBonus > 0 && this.timerLeft > 0) {
-                this.timerLeft = Math.min(this.timerLeft + cfg.timeBonus, cfg.timeLimit);
-                this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
+            // 击破表现：彩色迷你泡泡
+            const scale = node.scale.x;
+            this.spawnMiniBubbles(pos, scale, isRainbow ? 'white' : colorKey);
+
+            // 动态刷新
+            if (cfg.dynamic) {
+                this.respawnBubble(node);
             }
 
-            // 同色连锁（仅爆发关）
-            if (cfg.chain && !fromChain && !isRainbow) {
-                this.chainSameColor(node, colorKey);
+            if (this.queueIdx >= cfg.targetCount) {
+                this.completeLevel();
             }
-
-            this.advanceQueue();
-        } else {
-            this.playClip('wrong', 1);
-            if (cfg.timeLimit > 0) {
-                this.timerLeft = Math.max(0, this.timerLeft - 1);
-                this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
-            }
-        }
-
-        // 击破表现：彩色迷你泡泡
-        const scale = node.scale.x;
-        this.spawnMiniBubbles(pos, scale, isRainbow ? 'white' : colorKey);
-
-        // 动态刷新
-        if (cfg.dynamic) {
-            this.respawnBubble(node);
-        }
-
-        if (this.queueIdx >= cfg.targetCount) {
-            this.completeLevel();
+        } catch (e) {
+            console.error('[BubbleWrap] pop err', e);
         }
     }
 
@@ -745,8 +742,10 @@ export class GameManager extends Component {
     private drawProgress() {
         if (!this.progressG) return;
         this.progressG.clear();
+        const spacing = LEVELS.length >= 5 ? 48 : 72;
+        const x0 = -((LEVELS.length - 1) * spacing) / 2;
         for (let i = 0; i < LEVELS.length; i++) {
-            const x = -96 + i * 48;
+            const x = x0 + i * spacing;
             this.progressG.fillColor = i <= this.maxUnlocked
                 ? new Color(255, 150, 180, 255)
                 : new Color(214, 224, 234, 255);
