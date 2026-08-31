@@ -11,32 +11,32 @@ export interface BubbleColor {
 
 export const COLORS: Record<string, BubbleColor> = {
     red: {
-        key: 'red', name: '红', hex: '#FF4D5E',
-        tint: new Color(255, 77, 94, 255), pitch: 1, audio: 'pop_red',
+        key: 'red', name: '红', hex: '#F28B8B',
+        tint: new Color(242, 139, 139, 255), pitch: 1, audio: 'pop_red',
     },
     orange: {
-        key: 'orange', name: '橙', hex: '#FF9F45',
-        tint: new Color(255, 159, 69, 255), pitch: 1, audio: 'pop_orange',
+        key: 'orange', name: '橙', hex: '#F5B26B',
+        tint: new Color(245, 178, 107, 255), pitch: 1, audio: 'pop_orange',
     },
     yellow: {
-        key: 'yellow', name: '黄', hex: '#FFD23F',
-        tint: new Color(255, 210, 63, 255), pitch: 1, audio: 'pop_yellow',
+        key: 'yellow', name: '黄', hex: '#F5D06B',
+        tint: new Color(245, 208, 107, 255), pitch: 1, audio: 'pop_yellow',
     },
     green: {
-        key: 'green', name: '绿', hex: '#2ECC71',
-        tint: new Color(46, 204, 113, 255), pitch: 1, audio: 'pop_green',
+        key: 'green', name: '绿', hex: '#8FD9A8',
+        tint: new Color(143, 217, 168, 255), pitch: 1, audio: 'pop_green',
     },
     cyan: {
-        key: 'cyan', name: '青', hex: '#2BD9E8',
-        tint: new Color(43, 217, 232, 255), pitch: 1, audio: 'pop_cyan',
+        key: 'cyan', name: '青', hex: '#7FD4E0',
+        tint: new Color(127, 212, 224, 255), pitch: 1, audio: 'pop_cyan',
     },
     blue: {
-        key: 'blue', name: '蓝', hex: '#3D7BFF',
-        tint: new Color(61, 123, 255, 255), pitch: 1, audio: 'pop_blue',
+        key: 'blue', name: '蓝', hex: '#7FA8E8',
+        tint: new Color(127, 168, 232, 255), pitch: 1, audio: 'pop_blue',
     },
     violet: {
-        key: 'violet', name: '紫', hex: '#9B5CFF',
-        tint: new Color(155, 92, 255, 255), pitch: 1, audio: 'pop_violet',
+        key: 'violet', name: '紫', hex: '#B39AE8',
+        tint: new Color(179, 154, 232, 255), pitch: 1, audio: 'pop_violet',
     },
 };
 
@@ -47,11 +47,11 @@ export const BUBBLE_FRAMES: Record<string, SpriteFrame | null> = {};
 
 /** 彩虹泡泡循环流动使用的颜色序列 */
 export const RAINBOW_SEQ: Color[] = [
-    new Color(255, 77, 94, 255),
-    new Color(255, 159, 69, 255),
-    new Color(255, 210, 63, 255),
-    new Color(46, 204, 113, 255),
-    new Color(43, 217, 232, 255),
-    new Color(61, 123, 255, 255),
-    new Color(155, 92, 255, 255),
+    new Color(242, 139, 139, 255),
+    new Color(245, 178, 107, 255),
+    new Color(245, 208, 107, 255),
+    new Color(143, 217, 168, 255),
+    new Color(127, 212, 224, 255),
+    new Color(127, 168, 232, 255),
+    new Color(179, 154, 232, 255),
 ];

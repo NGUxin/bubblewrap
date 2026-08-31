@@ -153,6 +153,7 @@ export class GameManager extends Component {
     // 音频
     private clips: Record<string, AudioClip | null> = {};
     private audioPool: AudioSource[] = [];
+    private audioCursor = 0;
 
     // HUD
     private titleLabel: Label = null!;
@@ -237,11 +238,14 @@ export class GameManager extends Component {
     }
 
     private playClip(key: string, pitch: number) {
-        const clip = this.clips[key] || this.popAudio.clip;
+        const clip = this.clips[key];
         if (!clip) return;
         try {
-            const src = this.audioPool.find((a) => !a.playing) || this.popAudio;
-            if (src.clip !== clip) src.clip = clip;
+            // 轮询选择音源，确保每个颜色都播放自己的音频（不回落旧音效）
+            const src = this.audioPool[this.audioCursor % this.audioPool.length];
+            this.audioCursor++;
+            src.stop();
+            src.clip = clip;
             src.pitch = Math.max(0.5, Math.min(pitch, 2.0));
             src.play();
         } catch { /* 无音频设备时静默 */ }
@@ -320,6 +324,9 @@ export class GameManager extends Component {
             level: this.currentLevel,
             target: () => this.queue[this.queueIdx],
             remaining: () => cfg.targetCount - this.queueIdx,
+            audio: () => Object.fromEntries(
+                Object.entries(this.clips).map(([k, v]) => [k, !!v]),
+            ),
             bubbles: () => this.bubbleList.filter((b) => b.isValid).map((b) => {
                 const c = b.getComponent(Bubble);
                 return { x: b.position.x, y: b.position.y, color: c ? c.color : '', rainbow: c ? c.rainbow : false, popped: c ? c.isPopped : true };
@@ -425,10 +432,10 @@ export class GameManager extends Component {
         for (let i = 0; i < this.targetSlots.length; i++) {
             const node = this.targetSlots[i];
             const g = node.getComponent(Graphics)!;
-            const isCur = i === 0;
+            // 每个槽位固定对应队列中的一个目标；当前目标 = 第 queueIdx 个槽位
+            const isCur = i === this.queueIdx;
             node.setScale(isCur ? 1.35 : 1, isCur ? 1.35 : 1, 1);
-            const idx = this.queueIdx + i;
-            const key = idx < this.queue.length ? this.queue[idx] : '';
+            const key = i < this.queue.length ? this.queue[i] : '';
             g.clear();
             if (key) {
                 const tint = COLORS[key].tint.clone();
