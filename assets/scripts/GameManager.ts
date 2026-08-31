@@ -239,7 +239,9 @@ export class GameManager extends Component {
     private playClip(key: string, pitch: number) {
         try {
             // 统一走场景绑定主音源（抖音/Web 均验证可用）
-            const clip = this.clips[key];
+            // key 可能是颜色名(red)或音频名(pop_red/wrong/pop_rainbow)，统一换算
+            const clipKey = key === 'wrong' || key === RAINBOW_AUDIO ? key : `pop_${key}`;
+            const clip = this.clips[clipKey];
             if (clip && this.popAudio.clip !== clip) {
                 this.popAudio.clip = clip;   // 颜色音频就绪时换专属音色；未就绪则沿用旧 clip
             }
@@ -327,6 +329,7 @@ export class GameManager extends Component {
             audio: () => Object.fromEntries(
                 Object.entries(this.clips).map(([k, v]) => [k, !!v]),
             ),
+            lastClip: () => (this.popAudio.clip ? this.popAudio.clip.name : ''),
             bubbles: () => this.bubbleList.filter((b) => b.isValid).map((b) => {
                 const c = b.getComponent(Bubble);
                 return { x: b.position.x, y: b.position.y, color: c ? c.color : '', rainbow: c ? c.rainbow : false, popped: c ? c.isPopped : true };
@@ -385,19 +388,51 @@ export class GameManager extends Component {
         return bubble;
     }
 
-    private respawnBubble(node: Node) {
+    private respawnBubble(node: Node, wasRainbow: boolean) {
         if (!node.isValid) return;
         const cfg = LEVELS[this.currentLevel];
         const comp = node.getComponent(Bubble)!;
         this.scheduleOnce(() => {
             if (!node.isValid) return;
             comp.resetBubble();
-            if (cfg.rainbow && Math.random() < 0.12) {
+            const wantRainbow = cfg.rainbow && (wasRainbow || Math.random() < 0.12);
+            if (wantRainbow) {
                 comp.setRainbow();
+                // 彩虹泡泡刷新到随机空格位，避免总在固定位置出现
+                node.setPosition(this.randomEmptyPos());
             } else {
                 comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
             }
         }, 0.24);
+    }
+
+    /** 随机挑选一个未被占用的网格位置（用于彩虹泡泡刷新） */
+    private randomEmptyPos(): Vec3 {
+        const cfg = LEVELS[this.currentLevel];
+        const colSpacing = 720 / cfg.gridCols;
+        const x0 = -(cfg.gridCols - 1) * colSpacing / 2;
+        const rowSpacing = 96;
+        const y0 = -500;
+        const occupied = new Set<string>();
+        for (const b of this.bubbleList) {
+            if (!b.isValid) continue;
+            const c = b.getComponent(Bubble);
+            if (c && !c.isPopped) {
+                occupied.add(`${Math.round(b.position.x)},${Math.round(b.position.y)}`);
+            }
+        }
+        for (let attempt = 0; attempt < 24; attempt++) {
+            const c = randomRangeInt(0, cfg.gridCols - 1);
+            const r = randomRangeInt(0, cfg.gridRows - 1);
+            const x = x0 + c * colSpacing;
+            const y = y0 + r * rowSpacing;
+            if (!occupied.has(`${x},${y}`)) return new Vec3(x, y, 0);
+        }
+        return new Vec3(
+            x0 + randomRangeInt(0, cfg.gridCols - 1) * colSpacing,
+            y0 + randomRangeInt(0, cfg.gridRows - 1) * rowSpacing,
+            0,
+        );
     }
 
     // ---------------- 颜色队列 ----------------
@@ -539,7 +574,7 @@ export class GameManager extends Component {
 
             // 动态刷新
             if (cfg.dynamic) {
-                this.respawnBubble(node);
+                this.respawnBubble(node, isRainbow);
             }
 
             if (this.queueIdx >= cfg.targetCount) {
