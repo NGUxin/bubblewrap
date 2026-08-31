@@ -208,9 +208,20 @@ export class GameManager extends Component {
             'pop_red', 'pop_orange', 'pop_yellow', 'pop_green',
             'pop_cyan', 'pop_blue', 'pop_violet', RAINBOW_AUDIO, 'wrong',
         ];
-        keys.forEach((k) => {
+        const loadClip = (k: string, attempt: number) => {
             resources.load(`audio/${k}`, AudioClip, (err, clip) => {
-                if (!err && clip) this.clips[k] = clip;
+                if (!err && clip) {
+                    this.clips[k] = clip;
+                } else if (attempt < 4) {
+                    this.scheduleOnce(() => loadClip(k, attempt + 1), 0.5);
+                }
+            });
+        };
+        keys.forEach((k) => loadClip(k, 0));
+        // 1 秒后检查：仍未加载的音频再补一次，避免首局静音
+        this.scheduleOnce(() => {
+            keys.forEach((k) => {
+                if (!this.clips[k]) loadClip(k, 0);
             });
         });
         // 彩色泡泡纹理（保留立体高光的烘焙纹理）
@@ -224,7 +235,10 @@ export class GameManager extends Component {
         root.layer = Layers.Enum.UI_2D;
         this.node.addChild(root);
         for (let i = 0; i < 6; i++) {
-            this.audioPool.push(root.addComponent(AudioSource));
+            const src = root.addComponent(AudioSource);
+            src.volume = 1;
+            src.loop = false;
+            this.audioPool.push(src);
         }
         // 保险：首次 preload 若失败，强制重载，保证声音可播
         this.scheduleOnce(() => {
@@ -239,15 +253,18 @@ export class GameManager extends Component {
 
     private playClip(key: string, pitch: number) {
         const clip = this.clips[key];
-        if (!clip) return;
         try {
             // 轮询选择音源，确保每个颜色都播放自己的音频（不回落旧音效）
             const src = this.audioPool[this.audioCursor % this.audioPool.length];
             this.audioCursor++;
             src.stop();
-            src.clip = clip;
+            src.clip = clip || this.popAudio.clip;   // 颜色音频未就绪时兜底，保证永远有声
             src.pitch = Math.max(0.5, Math.min(pitch, 2.0));
             src.play();
+            // 颜色音频就绪后，同步给主音源换 clip（下次播放即生效）
+            if (clip && this.popAudio.clip !== clip) {
+                this.popAudio.clip = clip;
+            }
         } catch { /* 无音频设备时静默 */ }
     }
 
