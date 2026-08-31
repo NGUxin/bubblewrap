@@ -4,6 +4,8 @@
 > 引擎：Cocos Creator 3.8.8 · TypeScript
 > 目标平台：抖音小游戏（tt），同时保持 Web 可调试
 
+> 迭代记录 v0.3（2026-08-31）：按《关卡设计表》引入**颜色目标系统**——8×10 网格、顶部颜色队列（当前色高亮+滑动）、7 色泡泡与专属爆破音、1-2 动态刷新 / 1-3 倒计时 / 1-4 彩虹泡泡 / 1-5 同色连锁。`LevelConfig` 增加 `gridCols/gridRows/colors/dynamic/rainbow/timeLimit/timeBonus/targetCount/combo/chain` 字段；颜色与音高映射集中在 `ColorDefs.ts`；音频改为 resources 动态加载 + 音频池。
+
 ---
 
 ## 1. 设计目标

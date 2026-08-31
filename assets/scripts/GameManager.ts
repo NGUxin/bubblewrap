@@ -1,71 +1,79 @@
 import {
-    _decorator, Component, Node, instantiate, Vec3, Vec2, AudioSource,
-    randomRange, UITransform, input, Input, EventTouch, tween, Layers,
-    Label, Color, Sprite, Graphics, Button, BlockInputEvents,
+    _decorator, Component, Node, instantiate, Vec3, Vec2, AudioSource, AudioClip,
+    randomRange, randomRangeInt, UITransform, input, Input, EventTouch, tween, Layers,
+    Label, Color, Sprite, Graphics, Button, BlockInputEvents, resources,
 } from 'cc';
 import { Bubble } from './Bubble';
+import { COLORS, RAINBOW_AUDIO } from './ColorDefs';
 const { ccclass, property } = _decorator;
 
 interface LevelConfig {
     num: string;
     theme: string;
     keywords: string;
-    narrative: string;      // 开场衔接文案
-    outro: string;          // 通关衔接文案
-    count: number;
-    sizeMin: number;
-    sizeMax: number;
-    placement: 'random' | 'path' | 'grid' | 'mixed';
-    neighborShake: boolean;
-    comboMode: boolean;
-    chain: boolean;
-    burstScale: number;
-    timeLimit: number;
+    narrative: string;
+    outro: string;
+    gridCols: number;
+    gridRows: number;
+    colors: string[];        // 关卡可出现的颜色（红橙黄绿青蓝紫）
+    dynamic: boolean;        // 击破后原位刷新新的随机颜色
+    rainbow: boolean;        // 出现彩虹泡泡（可匹配任意目标色）
+    timeLimit: number;       // 0 = 不限时
+    timeBonus: number;       // 每次正确击破加时（秒）
+    targetCount: number;     // 颜色队列长度（完成即通关）
+    combo: boolean;          // 连击（音调渐高）
+    chain: boolean;          // 同色连锁
+    bubbleScale: number;
 }
 
-// 点 → 线 → 面 → 节奏 → 爆发（一条完整旅程）
+// 点 → 线 → 面 → 节奏 → 爆发（依据《关卡设计表》迭代）
 const LEVELS: LevelConfig[] = [
     {
-        num: '1-1', theme: '空', keywords: '留白 · 大泡泡 · 单次爆裂',
-        narrative: '所有爆裂，都始于第一声。',
-        outro: '第一声只是开始——现在，把它们连成一条线。',
-        count: 10, sizeMin: 1.6, sizeMax: 2.2, placement: 'random',
-        neighborShake: false, comboMode: false, chain: false, burstScale: 1.6, timeLimit: 0,
+        num: '1-1', theme: '空', keywords: '3色 · 静态棋盘 · 颜色队列',
+        narrative: '在整齐的泡泡纸中，寻找指定颜色。',
+        outro: '棋盘开始变化——新的泡泡会不断补上。',
+        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow'],
+        dynamic: false, rainbow: false, timeLimit: 0, timeBonus: 0,
+        targetCount: 24, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-2', theme: '线', keywords: '路径 · 滑动 · 连续爆裂',
-        narrative: '当点连成线，滑动即是节奏。',
-        outro: '点连成了线。当线铺满，就是面。',
-        count: 26, sizeMin: 0.9, sizeMax: 1.1, placement: 'path',
-        neighborShake: false, comboMode: false, chain: false, burstScale: 1.0, timeLimit: 0,
+        num: '1-2', theme: '线', keywords: '动态刷新 · 4色 · 持续寻找',
+        narrative: '每捏破一个，就会有新的泡泡补上。',
+        outro: '泡泡在流动了——现在，时间开始计时。',
+        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green'],
+        dynamic: true, rainbow: false, timeLimit: 0, timeBonus: 0,
+        targetCount: 30, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-3', theme: '面', keywords: '密集 · 挤压 · 相邻震动',
-        narrative: '线铺成面，挤压回响。',
-        outro: '面在脚下铺开——找到节奏，迎接爆发。',
-        count: 80, sizeMin: 0.72, sizeMax: 0.9, placement: 'grid',
-        neighborShake: true, comboMode: false, chain: false, burstScale: 0.9, timeLimit: 0,
+        num: '1-3', theme: '面', keywords: '倒计时 · 动态刷新 · 5色',
+        narrative: '在有限时间里，尽可能完成颜色队列。',
+        outro: '彩虹泡泡出现了——它们能匹配任意颜色。',
+        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan'],
+        dynamic: true, rainbow: false, timeLimit: 45, timeBonus: 0.8,
+        targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-4', theme: '节奏', keywords: 'Combo · 声音 · 速度',
-        narrative: '在密集中，找到自己的节拍。',
-        outro: '节拍已就绪，最后的连锁即将到来。',
-        count: 30, sizeMin: 1.0, sizeMax: 1.25, placement: 'random',
-        neighborShake: false, comboMode: true, chain: false, burstScale: 1.0, timeLimit: 30,
+        num: '1-4', theme: '节奏', keywords: '彩虹泡泡 · 7色 · 连击',
+        narrative: '彩虹泡泡能匹配队列中的任意颜色。',
+        outro: '节拍已就绪——最后的连锁爆发即将到来。',
+        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet'],
+        dynamic: true, rainbow: true, timeLimit: 50, timeBonus: 0.8,
+        targetCount: 40, combo: true, chain: false, bubbleScale: 0.95,
     },
     {
-        num: '1-5', theme: '爆发', keywords: '综合 · 连锁 · 高潮',
+        num: '1-5', theme: '爆发', keywords: '7色 · 彩虹 · 同色连锁 · 倒计时',
         narrative: '积累的一切，只为这一刻的连锁爆发。',
         outro: '全部通关！五段爆裂之旅，圆满落幕。',
-        count: 60, sizeMin: 0.85, sizeMax: 1.2, placement: 'mixed',
-        neighborShake: true, comboMode: true, chain: true, burstScale: 1.25, timeLimit: 45,
+        gridCols: 8, gridRows: 10, colors: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet'],
+        dynamic: true, rainbow: true, timeLimit: 55, timeBonus: 0.7,
+        targetCount: 48, combo: true, chain: true, bubbleScale: 0.95,
     },
 ];
 
 // ---------------- 存档 ----------------
 
 interface SaveData {
-    unlocked: number;       // 已解锁的最高关卡（下一关可玩）
+    unlocked: number;
     completed: number[];
     bestCombo: number;
 }
@@ -126,15 +134,26 @@ export class GameManager extends Component {
 
     private bubbleRadius = 30;
     private bubbleList: Node[] = [];
-    private chainMap = new Map<Node, boolean>();
 
     private currentLevel = 0;
     private maxUnlocked = 0;
-    private remaining = 0;
     private combo = 0;
     private lastPopTime = 0;
     private timerLeft = 0;
     private playing = false;
+
+    // 颜色队列
+    private queue: string[] = [];
+    private queueIdx = 0;
+    private targetBar: Node = null!;
+    private targetSlots: Node[] = [];
+    private slotStep = 62;
+    private barBusy = false;
+    private barPending = 0;
+
+    // 音频
+    private clips: Record<string, AudioClip | null> = {};
+    private audioPool: AudioSource[] = [];
 
     // HUD
     private titleLabel: Label = null!;
@@ -167,15 +186,7 @@ export class GameManager extends Component {
 
     start() {
         this.buildHud();
-        // 保险：首次 preload 若因路径未就绪失败，强制重载，保证声音可播
-        this.scheduleOnce(() => {
-            const clip = this.popAudio.clip;
-            if (clip && !(this.popAudio as any)._isLoaded) {
-                this.popAudio.clip = null;
-                this.popAudio.clip = clip;
-                this.popAudio.play();
-            }
-        }, 0.5);
+        this.loadAllAudio();
         this.showTitle();
     }
 
@@ -188,6 +199,47 @@ export class GameManager extends Component {
             }
             this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
         }
+    }
+
+    // ---------------- 音频 ----------------
+
+    private loadAllAudio() {
+        const keys = [
+            'pop_red', 'pop_orange', 'pop_yellow', 'pop_green',
+            'pop_cyan', 'pop_blue', 'pop_violet', RAINBOW_AUDIO, 'wrong',
+        ];
+        keys.forEach((k) => {
+            resources.load(`audio/${k}`, AudioClip, (err, clip) => {
+                if (!err && clip) this.clips[k] = clip;
+            });
+        });
+        // 音频池：保证连续/连锁击破时声音不互相打断
+        const root = new Node('AudioPool');
+        root.layer = Layers.Enum.UI_2D;
+        this.node.addChild(root);
+        for (let i = 0; i < 6; i++) {
+            this.audioPool.push(root.addComponent(AudioSource));
+        }
+        // 保险：首次 preload 若失败，强制重载，保证声音可播
+        this.scheduleOnce(() => {
+            const clip = this.popAudio.clip;
+            if (clip && !(this.popAudio as any)._isLoaded) {
+                this.popAudio.clip = null;
+                this.popAudio.clip = clip;
+                this.popAudio.play();
+            }
+        }, 0.5);
+    }
+
+    private playClip(key: string, pitch: number) {
+        const clip = this.clips[key] || this.popAudio.clip;
+        if (!clip) return;
+        try {
+            const src = this.audioPool.find((a) => !a.playing) || this.popAudio;
+            if (src.clip !== clip) src.clip = clip;
+            src.pitch = Math.max(0.5, Math.min(pitch, 2.0));
+            src.play();
+        } catch { /* 无音频设备时静默 */ }
     }
 
     // ---------------- 标题 / 存档 ----------------
@@ -240,35 +292,34 @@ export class GameManager extends Component {
         const cfg = LEVELS[index];
         this.clearBubbles();
 
-        this.remaining = cfg.count;
+        this.queueIdx = 0;
         this.combo = 0;
         this.lastPopTime = 0;
-        this.popAudio.pitch = 1;
         this.timerLeft = cfg.timeLimit;
-        this.playing = false; // 开场卡展示期间不可操作
-        this.chainMap.clear();
-        this.hideOverlay();
+        this.playing = false;
+        this.buildQueue(cfg);
 
         this.titleLabel.string = `${cfg.num} ${cfg.theme}`;
         this.subtitleLabel.string = cfg.keywords;
-        this.remainLabel.string = `剩余 ${this.remaining}`;
+        this.remainLabel.string = `剩余 ${cfg.targetCount}`;
         this.comboLabel.string = '';
         this.timerLabel.string = cfg.timeLimit > 0 ? `时间 ${cfg.timeLimit}` : '';
         this.drawProgress();
 
-        const positions = this.generatePositions(cfg);
-        for (const pos of positions) {
-            const bubble = instantiate(this.bubblePrefab);
-            bubble.setPosition(pos);
-            const s = randomRange(cfg.sizeMin, cfg.sizeMax);
-            bubble.setScale(s, s, 1);
-            this.bubbleContainer.addChild(bubble);
-            this.bubbleList.push(bubble);
-            bubble.on('bubblePop', this.onBubblePop, this);
-            if (cfg.chain && Math.random() < 0.25) {
-                this.chainMap.set(bubble, true);
-            }
-        }
+        this.spawnGrid(cfg);
+        this.renderTargetBar();
+
+        // 调试钩子（供自动化验证 / 真机检查）
+        (globalThis as any).__bubblewrap = {
+            gm: this,
+            level: this.currentLevel,
+            target: () => this.queue[this.queueIdx],
+            remaining: () => cfg.targetCount - this.queueIdx,
+            bubbles: () => this.bubbleList.filter((b) => b.isValid).map((b) => {
+                const c = b.getComponent(Bubble);
+                return { x: b.position.x, y: b.position.y, color: c ? c.color : '', rainbow: c ? c.rainbow : false, popped: c ? c.isPopped : true };
+            }),
+        };
 
         // 开场主题卡：衔接上一关
         this.showOverlay(`${cfg.num} · ${cfg.theme}`, `${cfg.keywords}\n${cfg.narrative}`, []);
@@ -284,64 +335,135 @@ export class GameManager extends Component {
     }
 
     private clearBubbles() {
-        this.bubbleList.forEach(b => {
+        this.bubbleList.forEach((b) => {
             if (b.isValid) b.destroy();
         });
         this.bubbleList.length = 0;
     }
 
-    private generatePositions(cfg: LevelConfig): Vec3[] {
-        const pts: Vec3[] = [];
-        if (cfg.placement === 'path') {
-            for (let i = 0; i < cfg.count; i++) {
-                const t = cfg.count === 1 ? 0 : i / (cfg.count - 1);
-                pts.push(new Vec3(
-                    -300 + 600 * t + randomRange(-8, 8),
-                    260 * Math.sin(t * Math.PI * 3) + randomRange(-6, 6),
-                    0,
-                ));
-            }
-        } else if (cfg.placement === 'grid') {
-            const spacing = 86;
-            let placed = 0;
-            let row = 0;
-            while (placed < cfg.count) {
-                const y = -470 + row * spacing * 0.87;
-                if (y > 460) break;
-                const off = row % 2 ? spacing / 2 : 0;
-                for (let x = -320 + off; x <= 320; x += spacing) {
-                    pts.push(new Vec3(x + randomRange(-6, 6), y + randomRange(-6, 6), 0));
-                    placed++;
-                    if (placed >= cfg.count) break;
-                }
-                row++;
-            }
-        } else if (cfg.placement === 'mixed') {
-            const half = Math.floor(cfg.count / 2);
-            for (let i = 0; i < half; i++) {
-                const t = half === 1 ? 0 : i / (half - 1);
-                pts.push(new Vec3(-300 + 600 * t + randomRange(-6, 6), 200 * Math.sin(t * Math.PI * 4) + randomRange(-5, 5), 0));
-            }
-            for (let i = half; i < cfg.count; i++) {
-                pts.push(new Vec3(randomRange(-320, 320), randomRange(-500, 440), 0));
-            }
-        } else {
-            const margin = cfg.sizeMax * 36;
-            for (let i = 0; i < cfg.count; i++) {
-                pts.push(new Vec3(
-                    randomRange(-340 + margin, 340 - margin),
-                    randomRange(-520 + margin, 460 - margin),
-                    0,
-                ));
+    /** 8×10 网格生成（可配置行列） */
+    private spawnGrid(cfg: LevelConfig) {
+        const colSpacing = 720 / cfg.gridCols;
+        const x0 = -(cfg.gridCols - 1) * colSpacing / 2;
+        const rowSpacing = 96;
+        const y0 = -500;
+        for (let r = 0; r < cfg.gridRows; r++) {
+            const y = y0 + r * rowSpacing;
+            for (let c = 0; c < cfg.gridCols; c++) {
+                const x = x0 + c * colSpacing;
+                const bubble = this.createBubble(new Vec3(x, y, 0), cfg);
+                this.bubbleContainer.addChild(bubble);
+                this.bubbleList.push(bubble);
             }
         }
-        return pts;
+    }
+
+    private createBubble(pos: Vec3, cfg: LevelConfig): Node {
+        const bubble = instantiate(this.bubblePrefab);
+        bubble.setPosition(pos);
+        const s = cfg.bubbleScale;
+        bubble.setScale(s, s, 1);
+        const comp = bubble.getComponent(Bubble)!;
+        if (cfg.rainbow && Math.random() < 0.12) {
+            comp.setRainbow();
+        } else {
+            comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+        }
+        bubble.on('bubblePop', this.onBubblePop, this);
+        return bubble;
+    }
+
+    private respawnBubble(node: Node) {
+        if (!node.isValid) return;
+        const cfg = LEVELS[this.currentLevel];
+        const comp = node.getComponent(Bubble)!;
+        this.scheduleOnce(() => {
+            if (!node.isValid) return;
+            comp.resetBubble();
+            if (cfg.rainbow && Math.random() < 0.12) {
+                comp.setRainbow();
+            } else {
+                comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+            }
+        }, 0.24);
+    }
+
+    // ---------------- 颜色队列 ----------------
+
+    private buildQueue(cfg: LevelConfig) {
+        this.queue = [];
+        for (let i = 0; i < cfg.targetCount; i++) {
+            this.queue.push(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+        }
+    }
+
+    private renderTargetBar() {
+        const step = this.slotStep;
+        for (let i = 0; i < 5; i++) {
+            this.targetSlots[i].setPosition((i - 2) * step, 0, 0);
+        }
+        this.highlightCurrent();
+    }
+
+    private highlightCurrent() {
+        for (let i = 0; i < this.targetSlots.length; i++) {
+            const node = this.targetSlots[i];
+            const g = node.getComponent(Graphics)!;
+            const isCur = i === 0;
+            node.setScale(isCur ? 1.18 : 1, isCur ? 1.18 : 1, 1);
+            const idx = this.queueIdx + i;
+            const key = idx < this.queue.length ? this.queue[idx] : '';
+            g.clear();
+            if (key) {
+                const tint = COLORS[key].tint.clone();
+                tint.a = isCur ? 255 : 130;
+                g.fillColor = tint;
+                g.circle(0, 0, 24);
+                g.fill();
+            }
+            // 高亮当前：白色圆环
+            if (isCur) {
+                g.lineWidth = 5;
+                g.strokeColor = new Color(255, 255, 255, 255);
+                g.circle(0, 0, 27);
+                g.stroke();
+            }
+        }
+    }
+
+    private advanceQueue() {
+        this.queueIdx++;
+        const cfg = LEVELS[this.currentLevel];
+        this.remainLabel.string = `剩余 ${Math.max(cfg.targetCount - this.queueIdx, 0)}`;
+        if (this.barBusy) {
+            this.barPending++;
+            return;
+        }
+        this.barBusy = true;
+        // 滑动动画：所有槽位左移，最左滚到最右并填入新颜色
+        const step = this.slotStep;
+        const nodes = this.targetSlots;
+        nodes.forEach((n) => {
+            tween(n).by(0.18, { position: new Vec3(-step, 0, 0) }, { easing: 'quadOut' }).start();
+        });
+        this.scheduleOnce(() => {
+            const first = nodes.shift()!;
+            nodes.push(first);
+            this.renderTargetBar();
+            this.barBusy = false;
+            if (this.barPending > 0) {
+                this.barPending--;
+                this.advanceQueue();
+            }
+        }, 0.18);
     }
 
     // ---------------- 交互 ----------------
 
     onTouch(event: EventTouch) {
         if (!this.playing) return;
+        const cfg = LEVELS[this.currentLevel];
+        const target = this.queue[this.queueIdx];
         const uiPos: Vec2 = event.getUILocation();
         const local = this.bubbleContainer
             .getComponent(UITransform)!
@@ -355,87 +477,106 @@ export class GameManager extends Component {
             const dy = local.y - pos.y;
             const r = this.bubbleRadius * scale;
             if (dx * dx + dy * dy <= r * r) {
-                comp.pop();
+                const matched = comp.rainbow || comp.color === target;
+                if (matched) {
+                    comp.pop();
+                } else if (cfg.dynamic) {
+                    // 动态关卡：点错也会破裂并原位刷新
+                    comp.pop();
+                } else {
+                    // 教学关卡：点错不破裂，柔和提示
+                    this.playClip('wrong', 1);
+                    comp.shake();
+                }
             }
         }
     }
 
-    onBubblePop(pos: Vec3, node: Node) {
+    onBubblePop(pos: Vec3, node: Node, colorKey: string, isRainbow: boolean) {
         const cfg = LEVELS[this.currentLevel];
-        if (cfg.comboMode) {
-            const now = Date.now() / 1000;
-            if (now - this.lastPopTime < 0.8) {
-                this.combo++;
-            } else {
-                this.combo = 1;
+        const target = this.queue[this.queueIdx];
+        const matched = isRainbow || colorKey === target;
+        const fromChain = !!(node as any).__chain;
+        (node as any).__chain = false;
+
+        if (matched) {
+            // 连击
+            if (cfg.combo) {
+                const now = Date.now() / 1000;
+                this.combo = (now - this.lastPopTime < 0.8) ? this.combo + 1 : 1;
+                this.lastPopTime = now;
+                this.comboLabel.string = this.combo >= 2 ? `COMBO x${this.combo}` : '';
             }
-            this.lastPopTime = now;
-            this.popAudio.pitch = Math.min(1 + (this.combo - 1) * 0.05, 1.8);
-            this.comboLabel.string = this.combo >= 2 ? `COMBO x${this.combo}` : '';
-        }
-        this.popAudio.play();
+            const pitch = (isRainbow ? 1.2 : COLORS[colorKey].pitch)
+                * (cfg.combo ? Math.min(1 + (this.combo - 1) * 0.04, 1.6) : 1);
+            this.playClip(isRainbow ? RAINBOW_AUDIO : colorKey, pitch);
 
+            if (cfg.timeBonus > 0 && this.timerLeft > 0) {
+                this.timerLeft = Math.min(this.timerLeft + cfg.timeBonus, cfg.timeLimit);
+                this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
+            }
+
+            // 同色连锁（仅爆发关）
+            if (cfg.chain && !fromChain && !isRainbow) {
+                this.chainSameColor(node, colorKey);
+            }
+
+            this.advanceQueue();
+        } else {
+            this.playClip('wrong', 1);
+            if (cfg.timeLimit > 0) {
+                this.timerLeft = Math.max(0, this.timerLeft - 1);
+                this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
+            }
+        }
+
+        // 击破表现：彩色迷你泡泡
         const scale = node.scale.x;
-        this.spawnMiniBubbles(pos, scale, cfg.burstScale);
+        this.spawnMiniBubbles(pos, scale, isRainbow ? 'white' : colorKey);
 
-        if (cfg.neighborShake) {
-            this.shakeNeighbors(node, 120 * scale + 40);
-        }
-        if (cfg.chain && this.chainMap.get(node)) {
-            this.chainFrom(node, 90 * scale + 30);
+        // 动态刷新
+        if (cfg.dynamic) {
+            this.respawnBubble(node);
         }
 
-        this.remaining--;
-        this.remainLabel.string = `剩余 ${Math.max(this.remaining, 0)}`;
-        if (this.remaining <= 0) {
+        if (this.queueIdx >= cfg.targetCount) {
             this.completeLevel();
         }
     }
 
-    private shakeNeighbors(from: Node, radius: number) {
+    private chainSameColor(from: Node, colorKey: string) {
+        const cfg = LEVELS[this.currentLevel];
         const fromPos = from.position;
         for (const other of this.bubbleList) {
             if (other === from || !other.isValid) continue;
             const comp = other.getComponent(Bubble);
-            if (!comp || comp.isPopped) continue;
+            if (!comp || comp.isPopped || comp.rainbow || comp.color !== colorKey) continue;
             const dx = other.position.x - fromPos.x;
             const dy = other.position.y - fromPos.y;
-            const rr = radius + 30 * other.scale.x;
-            if (dx * dx + dy * dy <= rr * rr) {
-                comp.shake();
-            }
-        }
-    }
-
-    private chainFrom(from: Node, radius: number) {
-        const fromPos = from.position;
-        for (const other of this.bubbleList) {
-            if (other === from || !other.isValid) continue;
-            const comp = other.getComponent(Bubble);
-            if (!comp || comp.isPopped) continue;
-            const dx = other.position.x - fromPos.x;
-            const dy = other.position.y - fromPos.y;
-            const rr = radius + 30 * other.scale.x;
-            if (dx * dx + dy * dy <= rr * rr && Math.random() < 0.35) {
+            if (dx * dx + dy * dy <= (140 * from.scale.x + 50) ** 2 && Math.random() < 0.45) {
+                const node = other;
                 this.scheduleOnce(() => {
-                    if (comp && comp.isValid && !comp.isPopped) {
-                        comp.pop();
+                    if (node.isValid && !node.getComponent(Bubble)!.isPopped) {
+                        (node as any).__chain = true;
+                        node.getComponent(Bubble)!.pop();
                     }
-                }, randomRange(0.1, 0.22));
+                }, randomRange(0.08, 0.18));
             }
         }
     }
 
-    private spawnMiniBubbles(pos: Vec3, scale: number, burstScale: number) {
-        const count = Math.round(4 * burstScale) + (Math.random() < 0.5 ? 1 : 0);
+    private spawnMiniBubbles(pos: Vec3, scale: number, colorKey: string) {
+        const count = 4 + (Math.random() < 0.5 ? 1 : 0);
         for (let i = 0; i < count; i++) {
             const mini = instantiate(this.bubblePrefab);
             mini.setPosition(pos);
-            const s = randomRange(0.18, 0.55) * Math.min(scale, 1.4);
+            const s = randomRange(0.18, 0.5) * Math.min(scale, 1.4);
             mini.setScale(s, s, 1);
+            const comp = mini.getComponent(Bubble)!;
+            comp.setColor(colorKey === 'white' ? 'yellow' : colorKey);
             this.bubbleContainer.addChild(mini);
             const ang = Math.random() * Math.PI * 2;
-            const dist = (1 - s * 0.6) * randomRange(32, 74) * burstScale;
+            const dist = (1 - s * 0.6) * randomRange(32, 74);
             const target = new Vec3(pos.x + Math.cos(ang) * dist, pos.y + Math.sin(ang) * dist, 0);
             const dur = randomRange(0.38, 0.55);
             tween(mini)
@@ -455,7 +596,6 @@ export class GameManager extends Component {
         this.playing = false;
         const cfg = LEVELS[this.currentLevel];
 
-        // 存档
         const save = loadSave();
         if (!save.completed.includes(this.currentLevel)) save.completed.push(this.currentLevel);
         save.unlocked = Math.max(save.unlocked, Math.min(this.currentLevel + 1, LEVELS.length - 1));
@@ -492,15 +632,34 @@ export class GameManager extends Component {
         const dark = new Color(80, 110, 135, 255);
         const gray = new Color(145, 165, 185, 255);
 
-        this.titleLabel = this.makeLabel('', 44, dark, new Vec3(0, 560, 0));
-        this.subtitleLabel = this.makeLabel('', 26, gray, new Vec3(0, 508, 0));
-        this.remainLabel = this.makeLabel('', 30, dark, new Vec3(230, 560, 0));
-        this.remainLabel.node.getComponent(UITransform)!.setContentSize(240, 50);
+        this.titleLabel = this.makeLabel('', 40, dark, new Vec3(0, 596, 0));
+        this.subtitleLabel = this.makeLabel('', 22, gray, new Vec3(0, 552, 0));
+        this.remainLabel = this.makeLabel('', 28, dark, new Vec3(250, 596, 0));
+        this.remainLabel.node.getComponent(UITransform)!.setContentSize(200, 40);
         this.remainLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
-        this.comboLabel = this.makeLabel('', 64, new Color(255, 110, 150, 255), new Vec3(0, 320, 0));
-        this.timerLabel = this.makeLabel('', 32, dark, new Vec3(-230, 560, 0));
-        this.timerLabel.node.getComponent(UITransform)!.setContentSize(240, 50);
+        this.comboLabel = this.makeLabel('', 44, new Color(255, 110, 150, 255), new Vec3(0, 410, 0));
+        this.timerLabel = this.makeLabel('', 28, dark, new Vec3(-250, 596, 0));
+        this.timerLabel.node.getComponent(UITransform)!.setContentSize(200, 40);
         this.timerLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+
+        // 顶部目标颜色队列
+        this.targetBar = new Node('TargetBar');
+        this.targetBar.layer = Layers.Enum.UI_2D;
+        this.targetBar.addComponent(UITransform).setContentSize(360, 70);
+        this.targetBar.setPosition(0, 500, 0);
+        this.node.addChild(this.targetBar);
+        for (let i = 0; i < 5; i++) {
+            const slot = new Node(`Slot${i}`);
+            slot.layer = Layers.Enum.UI_2D;
+            slot.addComponent(UITransform).setContentSize(60, 60);
+            slot.setPosition((i - 2) * this.slotStep, 0, 0);
+            const g = slot.addComponent(Graphics);
+            g.fillColor = new Color(200, 215, 230, 255);
+            g.circle(0, 0, 24);
+            g.fill();
+            this.targetBar.addChild(slot);
+            this.targetSlots.push(slot);
+        }
 
         // 关卡进度圆点
         const prog = new Node('Progress');
