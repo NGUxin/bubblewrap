@@ -395,8 +395,14 @@ export class GameManager extends Component {
         this.scheduleOnce(() => {
             if (!node.isValid) return;
             comp.resetBubble();
-            const wantRainbow = cfg.rainbow && (wasRainbow || Math.random() < 0.12);
-            if (wantRainbow) {
+            if (wasRainbow) {
+                // 彩虹爆破后：由红/黄/蓝/彩虹四种随机顶替，刷新到随机空格位
+                const types = [...cfg.colors, 'rainbow'];
+                const pick = types[randomRangeInt(0, types.length)];
+                if (pick === 'rainbow') comp.setRainbow();
+                else comp.setColor(pick);
+                node.setPosition(this.randomEmptyPos());
+            } else if (cfg.rainbow && Math.random() < 0.12) {
                 comp.setRainbow();
                 // 彩虹泡泡刷新到随机空格位，避免总在固定位置出现
                 node.setPosition(this.randomEmptyPos());
