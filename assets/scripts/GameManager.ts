@@ -417,7 +417,7 @@ export class GameManager extends Component {
             } catch (e) {
                 console.error('[BubbleWrap] respawn err', e);
             }
-        }, 0.24);
+        }, 0.16);
     }
 
     /** 随机选一个活泡泡的位置（用于彩虹互换，保证不留空位） */
@@ -575,13 +575,17 @@ export class GameManager extends Component {
                 }
             }
 
-            // 击破表现：彩色迷你泡泡
-            const scale = node.scale.x;
-            this.spawnMiniBubbles(pos, scale, isRainbow ? 'white' : colorKey);
-
-            // 动态刷新
+            // 动态刷新（关键：先补位，粒子异常不能阻塞补位）
             if (cfg.dynamic) {
                 this.respawnBubble(node, isRainbow);
+            }
+
+            // 击破表现：彩色迷你泡泡（装饰，独立兜底）
+            try {
+                const scale = node.scale.x;
+                this.spawnMiniBubbles(pos, scale, isRainbow ? 'white' : colorKey);
+            } catch (e) {
+                console.error('[BubbleWrap] vfx err', e);
             }
 
             if (this.queueIdx >= cfg.targetCount) {

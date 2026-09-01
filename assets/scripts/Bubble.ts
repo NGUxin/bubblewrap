@@ -73,10 +73,10 @@ export class Bubble extends Component {
         tween(this.sprite).stop();
         tween(this.node).stop();
         tween(this.node)
-            .to(0.22, { scale: new Vec3(this.originScale * 1.35, this.originScale * 1.35, 1) }, { easing: 'quadOut' })
+            .to(0.14, { scale: new Vec3(this.originScale * 1.35, this.originScale * 1.35, 1) }, { easing: 'quadOut' })
             .start();
         tween(this.sprite)
-            .to(0.22, { color: new Color(255, 255, 255, 0) }, { easing: 'quadOut' })
+            .to(0.14, { color: new Color(255, 255, 255, 0) }, { easing: 'quadOut' })
             .start();
         // 通知父节点：泡泡破裂（带节点引用、颜色信息，供连锁/音效/刷新使用）
         this.node.emit('bubblePop', this.node.position, this.node, this.colorKey, this.isRainbow);
