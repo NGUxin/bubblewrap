@@ -393,52 +393,53 @@ export class GameManager extends Component {
         const cfg = LEVELS[this.currentLevel];
         const comp = node.getComponent(Bubble)!;
         this.scheduleOnce(() => {
-            if (!node.isValid) return;
-            comp.resetBubble();
-            if (wasRainbow) {
-                // 彩虹爆破后：由红/黄/蓝/彩虹四种随机顶替，刷新到随机空格位
-                const types = [...cfg.colors, 'rainbow'];
-                const pick = types[randomRangeInt(0, types.length)];
-                if (pick === 'rainbow') comp.setRainbow();
-                else comp.setColor(pick);
-                node.setPosition(this.randomEmptyPos());
-            } else if (cfg.rainbow && Math.random() < 0.12) {
-                comp.setRainbow();
-                // 彩虹泡泡刷新到随机空格位，避免总在固定位置出现
-                node.setPosition(this.randomEmptyPos());
-            } else {
-                comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+            try {
+                if (!node.isValid) return;
+                comp.resetBubble();
+                const wantRainbow = wasRainbow || (cfg.rainbow && Math.random() < 0.12);
+                if (wantRainbow) {
+                    // 彩虹爆破后：由红/黄/蓝/彩虹四种随机顶替，并与随机活泡泡互换位置
+                    // （保证棋盘始终满格，不会出现空位）
+                    const types = [...cfg.colors, 'rainbow'];
+                    const pick = types[randomRangeInt(0, types.length)];
+                    if (pick === 'rainbow') comp.setRainbow();
+                    else comp.setColor(pick);
+                    const target = this.randomSwapPos(node);
+                    const targetNode = this.bubbleAt(target);
+                    if (targetNode && targetNode !== node) {
+                        targetNode.setPosition(node.position);
+                    }
+                    node.setPosition(target);
+                } else {
+                    // 普通泡泡：原位补上新的随机颜色
+                    comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+                }
+            } catch (e) {
+                console.error('[BubbleWrap] respawn err', e);
             }
         }, 0.24);
     }
 
-    /** 随机挑选一个未被占用的网格位置（用于彩虹泡泡刷新） */
-    private randomEmptyPos(): Vec3 {
-        const cfg = LEVELS[this.currentLevel];
-        const colSpacing = 720 / cfg.gridCols;
-        const x0 = -(cfg.gridCols - 1) * colSpacing / 2;
-        const rowSpacing = 96;
-        const y0 = -500;
-        const occupied = new Set<string>();
+    /** 随机选一个活泡泡的位置（用于彩虹互换，保证不留空位） */
+    private randomSwapPos(from: Node): Vec3 {
+        const candidates: Vec3[] = [];
+        for (const b of this.bubbleList) {
+            if (b === from || !b.isValid) continue;
+            const c = b.getComponent(Bubble);
+            if (c && !c.isPopped) candidates.push(b.position.clone());
+        }
+        if (candidates.length === 0) return from.position.clone();
+        return candidates[randomRangeInt(0, candidates.length)];
+    }
+
+    private bubbleAt(pos: Vec3): Node | null {
         for (const b of this.bubbleList) {
             if (!b.isValid) continue;
-            const c = b.getComponent(Bubble);
-            if (c && !c.isPopped) {
-                occupied.add(`${Math.round(b.position.x)},${Math.round(b.position.y)}`);
+            if (Math.abs(b.position.x - pos.x) < 1 && Math.abs(b.position.y - pos.y) < 1) {
+                return b;
             }
         }
-        for (let attempt = 0; attempt < 24; attempt++) {
-            const c = randomRangeInt(0, cfg.gridCols - 1);
-            const r = randomRangeInt(0, cfg.gridRows - 1);
-            const x = x0 + c * colSpacing;
-            const y = y0 + r * rowSpacing;
-            if (!occupied.has(`${x},${y}`)) return new Vec3(x, y, 0);
-        }
-        return new Vec3(
-            x0 + randomRangeInt(0, cfg.gridCols - 1) * colSpacing,
-            y0 + randomRangeInt(0, cfg.gridRows - 1) * rowSpacing,
-            0,
-        );
+        return null;
     }
 
     // ---------------- 颜色队列 ----------------
