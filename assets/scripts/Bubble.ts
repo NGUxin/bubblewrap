@@ -97,8 +97,14 @@ export class Bubble extends Component {
         tween(this.node).stop();
         tween(this.sprite).stop();
         this.node.setScale(this.originScale, this.originScale, 1);
-        if (this.isRainbow) {
-            this.setRainbow();
+        // 关键：泡泡使用后就不是彩虹了——还原为普通颜色，
+        // 之后是否变成彩虹由外部 setRainbow() 显式调用决定，不再"自带"彩虹身份
+        this.isRainbow = false;
+        if (this.colorKey === 'rainbow') this.colorKey = 'yellow';
+        const frame = BUBBLE_FRAMES[this.colorKey];
+        if (frame) {
+            this.sprite.spriteFrame = frame;
+            this.sprite.color = Color.WHITE;
         } else {
             this.sprite.color = COLORS[this.colorKey] ? COLORS[this.colorKey].tint : Color.WHITE;
         }

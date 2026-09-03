@@ -20,45 +20,60 @@ interface LevelConfig {
     rainbow: boolean;        // 出现彩虹泡泡（可匹配任意目标色）
     timeLimit: number;       // 0 = 不限时
     timeBonus: number;       // 每次正确击破加时（秒）
-    targetCount: number;     // 颜色队列长度（完成即通关）
+    targetCount: number;     // 颜色队列长度（完成即通关，≤ 棋盘泡泡总数）
     combo: boolean;          // 连击（音调渐高）
     chain: boolean;          // 同色连锁
-    bubbleScale: number;
 }
 
-// 点 → 线 → 面 → 节奏 → 爆发（依据《关卡设计表》迭代）
+// 难度常量
+const MISTAKE_LIMIT = 5;         // 每关累计捏错上限，达到即挑战失败
+const RAINBOW_STREAK_NEED = 12;  // 彩虹泡泡用掉后，需连续正确点击的泡泡数
+const COLOR_GRAY = new Color(145, 165, 185, 255);
+const COLOR_WARN = new Color(232, 84, 84, 255);
+const COLOR_PURPLE = new Color(190, 120, 255, 255);
+
+// 认色 → 流动 → 限时 → 彩虹 → 爆发
+// 棋盘逐关增大：3×4=12 / 4×5=20 / 5×6=30 / 6×7=42 / 7×8=56，目标总数与棋盘数一致
 const LEVELS: LevelConfig[] = [
     {
         num: '1-1', theme: '认色', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
         narrative: '在整齐的泡泡纸中，寻找指定颜色。',
         outro: '棋盘开始变化——新的泡泡会不断补上。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
+        gridCols: 3, gridRows: 4, colors: ['red', 'yellow', 'blue'],
         dynamic: false, rainbow: false, timeLimit: 0, timeBonus: 0,
-        targetCount: 24, combo: false, chain: false, bubbleScale: 0.95,
+        targetCount: 12, combo: false, chain: false,
     },
     {
         num: '1-2', theme: '流动', keywords: '动态刷新 · 红黄蓝 · 持续寻找',
         narrative: '每捏破一个，就会有新的泡泡补上。',
         outro: '泡泡在流动了——现在，时间开始计时。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
+        gridCols: 4, gridRows: 5, colors: ['red', 'yellow', 'blue'],
         dynamic: true, rainbow: false, timeLimit: 0, timeBonus: 0,
-        targetCount: 30, combo: false, chain: false, bubbleScale: 0.95,
+        targetCount: 20, combo: false, chain: false,
     },
     {
         num: '1-3', theme: '限时', keywords: '倒计时 · 动态刷新 · 红黄蓝',
         narrative: '在有限时间里，尽可能完成颜色队列。',
-        outro: '彩虹泡泡出现了——它们能匹配任意颜色。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
+        outro: '彩虹泡泡出现了——它能匹配任意颜色。',
+        gridCols: 5, gridRows: 6, colors: ['red', 'yellow', 'blue'],
         dynamic: true, rainbow: false, timeLimit: 45, timeBonus: 0.8,
-        targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
+        targetCount: 30, combo: false, chain: false,
     },
     {
-        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 三色',
+        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 动态刷新 · 三色',
         narrative: '彩虹泡泡能匹配队列中的任意颜色。',
-        outro: '全部通关！四段爆裂之旅，圆满落幕。',
-        gridCols: 8, gridRows: 10, colors: ['red', 'yellow', 'blue'],
+        outro: '最后一块泡泡纸——同色连锁，一触即发。',
+        gridCols: 6, gridRows: 7, colors: ['red', 'yellow', 'blue'],
         dynamic: true, rainbow: true, timeLimit: 0, timeBonus: 0,
-        targetCount: 36, combo: false, chain: false, bubbleScale: 0.95,
+        targetCount: 42, combo: false, chain: false,
+    },
+    {
+        num: '1-5', theme: '爆发', keywords: '限时 · 彩虹 · 同色连锁',
+        narrative: '同色相连，一触即发；彩虹助你一臂之力。',
+        outro: '全部通关！五段爆裂之旅，圆满落幕。',
+        gridCols: 7, gridRows: 8, colors: ['red', 'yellow', 'blue'],
+        dynamic: true, rainbow: true, timeLimit: 60, timeBonus: 0.8,
+        targetCount: 56, combo: false, chain: true,
     },
 ];
 
@@ -134,6 +149,12 @@ export class GameManager extends Component {
     private timerLeft = 0;
     private playing = false;
 
+    // 失败机制：本关累计捏错次数
+    private mistakes = 0;
+    // 彩虹泡泡：同一时间最多一个；用掉后连续正确点击累计
+    private rainbowNode: Node | null = null;
+    private rainbowStreak = 0;
+
     // 颜色队列
     private queue: string[] = [];
     private queueIdx = 0;
@@ -151,6 +172,8 @@ export class GameManager extends Component {
     private remainLabel: Label = null!;
     private comboLabel: Label = null!;
     private timerLabel: Label = null!;
+    private missLabel: Label = null!;
+    private rainbowLabel: Label = null!;
     private progressG: Graphics = null!;
 
     // 遮罩
@@ -281,7 +304,7 @@ export class GameManager extends Component {
                 this.loadLevel(0);
             },
         });
-        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹', buttons);
+        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹 · 爆发', buttons);
     }
 
     private firstIncomplete(save: SaveData): number {
@@ -308,6 +331,9 @@ export class GameManager extends Component {
         this.lastPopTime = 0;
         this.timerLeft = cfg.timeLimit;
         this.playing = false;
+        this.mistakes = 0;
+        this.rainbowNode = null;
+        this.rainbowStreak = 0;
         this.buildQueue(cfg);
 
         this.titleLabel.string = `${cfg.num} ${cfg.theme}`;
@@ -315,9 +341,14 @@ export class GameManager extends Component {
         this.remainLabel.string = `剩余 ${cfg.targetCount}`;
         this.comboLabel.string = '';
         this.timerLabel.string = cfg.timeLimit > 0 ? `时间 ${cfg.timeLimit}` : '';
+        this.missLabel.string = `失误 0/${MISTAKE_LIMIT}`;
+        this.missLabel.color = COLOR_GRAY;
         this.drawProgress();
 
         this.spawnGrid(cfg);
+        // 彩虹关：开局场上即有一个彩虹泡泡（同一时间仅一个）
+        if (cfg.rainbow) this.spawnRainbow();
+        this.updateRainbowHint();
         this.renderTargetBar();
 
         // 调试钩子（供自动化验证 / 真机检查）
@@ -356,39 +387,40 @@ export class GameManager extends Component {
         this.bubbleList.length = 0;
     }
 
-    /** 8×10 网格生成（可配置行列） */
+    /** 按行列生成网格：泡泡大小与格距固定，只有数量随关卡递增，网格整体居中 */
     private spawnGrid(cfg: LevelConfig) {
-        const colSpacing = 720 / cfg.gridCols;
-        const x0 = -(cfg.gridCols - 1) * colSpacing / 2;
-        const rowSpacing = 96;
-        const y0 = -500;
+        const CELL = 88;     // 固定格距（所有关卡一致）
+        const SCALE = 0.95;  // 固定泡泡尺寸（所有关卡一致）
+        const x0 = -(cfg.gridCols - 1) * CELL / 2;
+        const centerY = -70;
+        const yTop = centerY + (cfg.gridRows - 1) * CELL / 2;
+        // 静态教学关：棋盘颜色取队列颜色洗牌，保证队列一定能被捏完
+        const forced = !cfg.dynamic ? this.shuffled(this.queue.slice()) : null;
+        let i = 0;
         for (let r = 0; r < cfg.gridRows; r++) {
-            const y = y0 + r * rowSpacing;
+            const y = yTop - r * CELL;
             for (let c = 0; c < cfg.gridCols; c++) {
-                const x = x0 + c * colSpacing;
-                const bubble = this.createBubble(new Vec3(x, y, 0), cfg);
+                const x = x0 + c * CELL;
+                const bubble = this.createBubble(new Vec3(x, y, 0), cfg, SCALE, forced ? forced[i] : undefined);
                 this.bubbleContainer.addChild(bubble);
                 this.bubbleList.push(bubble);
+                i++;
             }
         }
     }
 
-    private createBubble(pos: Vec3, cfg: LevelConfig): Node {
+    private createBubble(pos: Vec3, cfg: LevelConfig, scale: number, forcedColor?: string): Node {
         const bubble = instantiate(this.bubblePrefab);
         bubble.setPosition(pos);
-        const s = cfg.bubbleScale;
-        bubble.setScale(s, s, 1);
+        bubble.setScale(scale, scale, 1);
         const comp = bubble.getComponent(Bubble)!;
-        if (cfg.rainbow && Math.random() < 0.12) {
-            comp.setRainbow();
-        } else {
-            comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
-        }
+        // 创建时只出普通颜色；彩虹泡泡统一由 spawnRainbow 单点刷新
+        comp.setColor(forcedColor ?? cfg.colors[randomRangeInt(0, cfg.colors.length)]);
         bubble.on('bubblePop', this.onBubblePop, this);
         return bubble;
     }
 
-    private respawnBubble(node: Node, wasRainbow: boolean) {
+    private respawnBubble(node: Node) {
         if (!node.isValid) return;
         const cfg = LEVELS[this.currentLevel];
         const comp = node.getComponent(Bubble)!;
@@ -396,50 +428,23 @@ export class GameManager extends Component {
             try {
                 if (!node.isValid) return;
                 comp.resetBubble();
-                const wantRainbow = wasRainbow || (cfg.rainbow && Math.random() < 0.12);
-                if (wantRainbow) {
-                    // 彩虹爆破后：由红/黄/蓝/彩虹四种随机顶替，并与随机活泡泡互换位置
-                    // （保证棋盘始终满格，不会出现空位）
-                    const types = [...cfg.colors, 'rainbow'];
-                    const pick = types[randomRangeInt(0, types.length)];
-                    if (pick === 'rainbow') comp.setRainbow();
-                    else comp.setColor(pick);
-                    const target = this.randomSwapPos(node);
-                    const targetNode = this.bubbleAt(target);
-                    if (targetNode && targetNode !== node) {
-                        targetNode.setPosition(node.position);
-                    }
-                    node.setPosition(target);
-                } else {
-                    // 普通泡泡：原位补上新的随机颜色
-                    comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
-                }
+                // 始终补普通颜色；彩虹泡泡按「12 连正确」规则另行刷新，同一时间最多一个
+                comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
             } catch (e) {
                 console.error('[BubbleWrap] respawn err', e);
             }
         }, 0.16);
     }
 
-    /** 随机选一个活泡泡的位置（用于彩虹互换，保证不留空位） */
-    private randomSwapPos(from: Node): Vec3 {
-        const candidates: Vec3[] = [];
-        for (const b of this.bubbleList) {
-            if (b === from || !b.isValid) continue;
-            const c = b.getComponent(Bubble);
-            if (c && !c.isPopped) candidates.push(b.position.clone());
+    private shuffled<T>(arr: T[]): T[] {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = randomRangeInt(0, i + 1);
+            const tmp = a[i];
+            a[i] = a[j];
+            a[j] = tmp;
         }
-        if (candidates.length === 0) return from.position.clone();
-        return candidates[randomRangeInt(0, candidates.length)];
-    }
-
-    private bubbleAt(pos: Vec3): Node | null {
-        for (const b of this.bubbleList) {
-            if (!b.isValid) continue;
-            if (Math.abs(b.position.x - pos.x) < 1 && Math.abs(b.position.y - pos.y) < 1) {
-                return b;
-            }
-        }
-        return null;
+        return a;
     }
 
     // ---------------- 颜色队列 ----------------
@@ -518,6 +523,7 @@ export class GameManager extends Component {
             const local = this.bubbleContainer
                 .getComponent(UITransform)!
                 .convertToNodeSpaceAR(new Vec3(uiPos.x, uiPos.y, 0));
+            let wrongTap = false;
             for (const bubble of this.bubbleList) {
                 const comp = bubble.getComponent(Bubble);
                 if (!comp || comp.isPopped) continue;
@@ -531,15 +537,17 @@ export class GameManager extends Component {
                     if (matched) {
                         comp.pop();
                     } else if (cfg.dynamic) {
-                        // 动态关卡：点错也会破裂并原位刷新
+                        // 动态关卡：点错也会破裂并原位刷新（判错由 onBubblePop 统一计数）
                         comp.pop();
                     } else {
-                        // 教学关卡：点错不破裂，柔和提示
+                        // 教学关卡：点错不破裂，柔和提示；同一次触摸只记一次失误
                         this.playClip('wrong', 0.55);
                         comp.shake();
+                        wrongTap = true;
                     }
                 }
             }
+            if (wrongTap) this.registerWrong();
         } catch (e) {
             console.error('[BubbleWrap] touch err', e);
         }
@@ -567,8 +575,22 @@ export class GameManager extends Component {
                 }
 
                 this.advanceQueue();
+
+                // 彩虹泡泡规则：用掉后场上即无彩虹，需连续正确点击 12 个
+                // （连锁带出的不算点击；捏错会在 registerWrong 中清零）
+                if (isRainbow) {
+                    this.rainbowNode = null;
+                    this.rainbowStreak = 0;
+                } else if (cfg.rainbow && !fromChain && !this.isRainbowActive()) {
+                    this.rainbowStreak++;
+                    if (this.rainbowStreak >= RAINBOW_STREAK_NEED) this.spawnRainbow();
+                }
+                this.updateRainbowHint();
+            } else if (fromChain) {
+                // 连锁带出的泡泡：点击时目标色已推进，不判错、不扣时间
             } else {
                 this.playClip('wrong', 0.55);
+                this.registerWrong();
                 if (cfg.timeLimit > 0) {
                     this.timerLeft = Math.max(0, this.timerLeft - 1);
                     this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
@@ -577,7 +599,7 @@ export class GameManager extends Component {
 
             // 动态刷新（关键：先补位，粒子异常不能阻塞补位）
             if (cfg.dynamic) {
-                this.respawnBubble(node, isRainbow);
+                this.respawnBubble(node);
             }
 
             // 击破表现：彩色迷你泡泡（装饰，独立兜底）
@@ -641,6 +663,80 @@ export class GameManager extends Component {
         }
     }
 
+    // ---------------- 失败判定 ----------------
+
+    /** 捏错统一入口：累计失误、刷新 HUD，达到上限即失败（关卡加载时清零） */
+    private registerWrong() {
+        if (!this.playing) return;
+        this.mistakes++;
+        this.missLabel.string = `失误 ${this.mistakes}/${MISTAKE_LIMIT}`;
+        this.missLabel.color = this.mistakes >= 3 ? COLOR_WARN : COLOR_GRAY;
+        // 「连续」正确被打断，彩虹蓄力清零
+        this.rainbowStreak = 0;
+        this.updateRainbowHint();
+        if (this.mistakes >= MISTAKE_LIMIT) {
+            this.failLevel();
+        }
+    }
+
+    private failLevel() {
+        if (!this.playing) return;
+        this.playing = false;
+        this.showOverlay('挑战失败', `累计捏错 ${MISTAKE_LIMIT} 次，再试一次！`, [{
+            label: '重新挑战',
+            action: () => {
+                this.hideOverlay();
+                this.loadLevel(this.currentLevel);
+            },
+        }]);
+    }
+
+    // ---------------- 彩虹泡泡 ----------------
+
+    private isRainbowActive(): boolean {
+        const n = this.rainbowNode;
+        if (!n || !n.isValid) return false;
+        const c = n.getComponent(Bubble);
+        return !!c && !c.isPopped && c.rainbow;
+    }
+
+    /**
+     * 彩虹泡泡唯一刷新入口：场上已有彩虹时绝不刷新（同一时间最多一个）；
+     * 只把随机一个普通活泡泡转换为彩虹，不新增泡泡，棋盘总数不变。
+     */
+    private spawnRainbow() {
+        if (this.isRainbowActive()) return;
+        const candidates = this.bubbleList.filter((b) => {
+            if (!b.isValid) return false;
+            const c = b.getComponent(Bubble);
+            return !!c && !c.isPopped && !c.rainbow;
+        });
+        if (candidates.length === 0) return;
+        const target = candidates[randomRangeInt(0, candidates.length)];
+        target.getComponent(Bubble)!.setRainbow();
+        this.rainbowNode = target;
+        this.rainbowStreak = 0;
+        this.updateRainbowHint();
+    }
+
+    private updateRainbowHint() {
+        if (!this.rainbowLabel) return;
+        const cfg = LEVELS[this.currentLevel];
+        if (!cfg.rainbow) {
+            this.rainbowLabel.string = '';
+            return;
+        }
+        if (this.isRainbowActive()) {
+            this.rainbowLabel.string = '彩虹泡泡出现了！点它可匹配任意颜色';
+            this.rainbowLabel.color = COLOR_PURPLE;
+        } else if (this.rainbowStreak > 0) {
+            this.rainbowLabel.string = `彩虹蓄力中 ${this.rainbowStreak}/${RAINBOW_STREAK_NEED}`;
+            this.rainbowLabel.color = COLOR_GRAY;
+        } else {
+            this.rainbowLabel.string = '';
+        }
+    }
+
     // ---------------- 通关 / 时间到 / 存档 ----------------
 
     private completeLevel() {
@@ -693,6 +789,13 @@ export class GameManager extends Component {
         this.timerLabel = this.makeLabel('', 28, dark, new Vec3(-250, 596, 0));
         this.timerLabel.node.getComponent(UITransform)!.setContentSize(200, 40);
         this.timerLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+
+        // 失误计数（右上，副标题下方；≥3 次变红警示）
+        this.missLabel = this.makeLabel('', 24, COLOR_GRAY, new Vec3(270, 552, 0));
+        this.missLabel.node.getComponent(UITransform)!.setContentSize(170, 36);
+        this.missLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
+        // 彩虹泡泡提示（棋盘上方）
+        this.rainbowLabel = this.makeLabel('', 24, COLOR_PURPLE, new Vec3(0, 360, 0));
 
         // 顶部目标颜色队列
         this.targetBar = new Node('TargetBar');
