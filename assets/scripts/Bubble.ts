@@ -14,6 +14,9 @@ export class Bubble extends Component {
     private originScale = 1;
     private colorKey = 'yellow';
     private isRainbow = false;
+    private isChanging = false;
+    private changeIdx = 0;
+    private static CHANGE_KEYS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet'];
 
     get isPopped(): boolean {
         return this._isPop;
@@ -27,6 +30,10 @@ export class Bubble extends Component {
         return this.isRainbow;
     }
 
+    get changing(): boolean {
+        return this.isChanging;
+    }
+
     onLoad() {
         this.sprite = this.getComponent(Sprite)!;
         this.originScale = this.node.scale.x;
@@ -34,6 +41,7 @@ export class Bubble extends Component {
 
     /** 设置泡泡颜色（普通泡泡） */
     setColor(key: string) {
+        this.stopChanging();
         this.colorKey = key;
         this.isRainbow = false;
         tween(this.sprite).stop();
@@ -52,6 +60,7 @@ export class Bubble extends Component {
 
     /** 设置为彩虹泡泡：颜色循环流动，可匹配任意目标色 */
     setRainbow() {
+        this.stopChanging();
         this.colorKey = 'rainbow';
         this.isRainbow = true;
         const sp = this.getComponent(Sprite)!;
@@ -66,10 +75,44 @@ export class Bubble extends Component {
         tween(sp).to(0.28, { color: seq[idx] }).call(cycle).start();
     }
 
+    /** 变色泡泡：红→橙→黄→绿→青→蓝→紫 循环，当前颜色 = 目标色时才可击破 */
+    setChanging() {
+        this.isRainbow = false;
+        this.isChanging = true;
+        this.changeIdx = randomIndex();
+        this.colorKey = Bubble.CHANGE_KEYS[this.changeIdx];
+        this.applyColor(this.colorKey);
+    }
+
+    /** 由 GameManager.update 驱动：推进到下一个颜色 */
+    cycleNext() {
+        if (!this.isChanging || this._isPop) return;
+        this.changeIdx = (this.changeIdx + 1) % Bubble.CHANGE_KEYS.length;
+        this.colorKey = Bubble.CHANGE_KEYS[this.changeIdx];
+        this.applyColor(this.colorKey);
+    }
+
+    private stopChanging() {
+        this.isChanging = false;
+    }
+
+    private applyColor(key: string) {
+        const sp = this.getComponent(Sprite)!;
+        this.sprite = sp;
+        const frame = BUBBLE_FRAMES[key];
+        if (frame) {
+            sp.spriteFrame = frame;
+            sp.color = Color.WHITE;
+        } else {
+            sp.color = COLORS[key] ? COLORS[key].tint : Color.WHITE;
+        }
+    }
+
     /** 击破：像肥皂泡一样放大并淡出消失（配合粒子爆裂） */
     pop() {
         if (this._isPop) return;
         this._isPop = true;
+        this.stopChanging();
         tween(this.sprite).stop();
         tween(this.node).stop();
         tween(this.node)
@@ -94,6 +137,7 @@ export class Bubble extends Component {
 
     resetBubble() {
         this._isPop = false;
+        this.stopChanging();
         tween(this.node).stop();
         tween(this.sprite).stop();
         this.node.setScale(this.originScale, this.originScale, 1);
@@ -109,4 +153,8 @@ export class Bubble extends Component {
             this.sprite.color = COLORS[this.colorKey] ? COLORS[this.colorKey].tint : Color.WHITE;
         }
     }
+}
+
+function randomIndex(): number {
+    return Math.floor(Math.random() * 7);
 }

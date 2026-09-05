@@ -15,14 +15,15 @@ interface LevelConfig {
     outro: string;
     gridCols: number;
     gridRows: number;
+    shape: 'rect' | 'arch' | 'concave' | 'circle' | 'heart';
     colors: string[];        // 关卡可出现的颜色（红橙黄绿青蓝紫）
     dynamic: boolean;        // 击破后原位刷新新的随机颜色
+    gravity: boolean;        // 重力补位：击破后上方泡泡下落填满空位
     rainbow: boolean;        // 出现彩虹泡泡（可匹配任意目标色）
+    changing: boolean;       // 出现变色泡泡（颜色循环流动，当前色=目标色才可击破）
     timeLimit: number;       // 0 = 不限时
     timeBonus: number;       // 每次正确击破加时（秒）
     targetCount: number;     // 颜色队列长度（完成即通关，≤ 棋盘泡泡总数）
-    combo: boolean;          // 连击（音调渐高）
-    chain: boolean;          // 同色连锁
 }
 
 // 难度常量
@@ -32,48 +33,79 @@ const COLOR_GRAY = new Color(145, 165, 185, 255);
 const COLOR_WARN = new Color(232, 84, 84, 255);
 const COLOR_PURPLE = new Color(190, 120, 255, 255);
 
-// 认色 → 流动 → 限时 → 彩虹 → 爆发
-// 棋盘逐关增大：3×4=12 / 4×5=20 / 5×6=30 / 6×7=42 / 7×8=56，目标总数与棋盘数一致
+// 认色 → 流动 → 限时 → 彩虹 → 空间 → 时空 → 圆舞 → 变色 → 大综合
 const LEVELS: LevelConfig[] = [
     {
         num: '1-1', theme: '认色', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
         narrative: '在整齐的泡泡纸中，寻找指定颜色。',
         outro: '棋盘开始变化——新的泡泡会不断补上。',
-        gridCols: 3, gridRows: 4, colors: ['red', 'yellow', 'blue'],
-        dynamic: false, rainbow: false, timeLimit: 0, timeBonus: 0,
-        targetCount: 12, combo: false, chain: false,
+        gridCols: 3, gridRows: 4, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        dynamic: false, gravity: false, rainbow: false, changing: false,
+        timeLimit: 0, timeBonus: 0, targetCount: 12,
     },
     {
         num: '1-2', theme: '流动', keywords: '动态刷新 · 红黄蓝 · 持续寻找',
         narrative: '每捏破一个，就会有新的泡泡补上。',
         outro: '泡泡在流动了——现在，时间开始计时。',
-        gridCols: 4, gridRows: 5, colors: ['red', 'yellow', 'blue'],
-        dynamic: true, rainbow: false, timeLimit: 0, timeBonus: 0,
-        targetCount: 20, combo: false, chain: false,
+        gridCols: 4, gridRows: 5, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        dynamic: true, gravity: false, rainbow: false, changing: false,
+        timeLimit: 0, timeBonus: 0, targetCount: 20,
     },
     {
         num: '1-3', theme: '限时', keywords: '倒计时 · 动态刷新 · 红黄蓝',
         narrative: '在有限时间里，尽可能完成颜色队列。',
         outro: '彩虹泡泡出现了——它能匹配任意颜色。',
-        gridCols: 5, gridRows: 6, colors: ['red', 'yellow', 'blue'],
-        dynamic: true, rainbow: false, timeLimit: 45, timeBonus: 0.8,
-        targetCount: 30, combo: false, chain: false,
+        gridCols: 5, gridRows: 6, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        dynamic: true, gravity: false, rainbow: false, changing: false,
+        timeLimit: 45, timeBonus: 0.8, targetCount: 30,
     },
     {
         num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 动态刷新 · 三色',
         narrative: '彩虹泡泡能匹配队列中的任意颜色。',
-        outro: '最后一块泡泡纸——同色连锁，一触即发。',
-        gridCols: 6, gridRows: 7, colors: ['red', 'yellow', 'blue'],
-        dynamic: true, rainbow: true, timeLimit: 0, timeBonus: 0,
-        targetCount: 42, combo: false, chain: false,
+        outro: '空间开始流动——泡泡不再原地不动的等待。',
+        gridCols: 6, gridRows: 7, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        dynamic: true, gravity: false, rainbow: true, changing: false,
+        timeLimit: 0, timeBonus: 0, targetCount: 42,
     },
     {
-        num: '1-5', theme: '爆发', keywords: '限时 · 彩虹 · 同色连锁',
-        narrative: '同色相连，一触即发；彩虹助你一臂之力。',
-        outro: '全部通关！五段爆裂之旅，圆满落幕。',
-        gridCols: 7, gridRows: 8, colors: ['red', 'yellow', 'blue'],
-        dynamic: true, rainbow: true, timeLimit: 60, timeBonus: 0.8,
-        targetCount: 56, combo: false, chain: true,
+        num: '1-5', theme: '空间', keywords: '拱形棋盘 · 重力补位',
+        narrative: '泡泡不再待在原处——捏破后，上方泡泡会下落补位。',
+        outro: '空间在流动，时间也开始追赶你了。',
+        gridCols: 7, gridRows: 7, shape: 'arch', colors: ['red', 'yellow', 'blue'],
+        dynamic: false, gravity: true, rainbow: false, changing: false,
+        timeLimit: 0, timeBonus: 0, targetCount: 37,
+    },
+    {
+        num: '1-6', theme: '时空', keywords: '凹形棋盘 · 重力补位 · 倒计时',
+        narrative: '空间结构变了，倒计时也开始了。',
+        outro: '棋盘转了起来——下一个形状是什么？',
+        gridCols: 7, gridRows: 7, shape: 'concave', colors: ['red', 'yellow', 'blue'],
+        dynamic: false, gravity: true, rainbow: false, changing: false,
+        timeLimit: 50, timeBonus: 0.8, targetCount: 43,
+    },
+    {
+        num: '1-7', theme: '圆舞', keywords: '圆形棋盘 · 重力补位 · 倒计时',
+        narrative: '圆形棋盘里，泡泡旋转着下落。',
+        outro: '心形棋盘准备好了——新的特殊泡泡即将登场。',
+        gridCols: 7, gridRows: 7, shape: 'circle', colors: ['red', 'yellow', 'blue'],
+        dynamic: false, gravity: true, rainbow: false, changing: false,
+        timeLimit: 55, timeBonus: 0.8, targetCount: 37,
+    },
+    {
+        num: '1-8', theme: '变色', keywords: '心形棋盘 · 彩虹 · 变色泡泡 · 倒计时',
+        narrative: '变色泡泡在红橙黄绿青蓝紫之间流动，等它变成目标色再点。',
+        outro: '最终试炼——所有机制，一起爆发。',
+        gridCols: 7, gridRows: 7, shape: 'heart', colors: ['red', 'yellow', 'blue'],
+        dynamic: false, gravity: true, rainbow: true, changing: true,
+        timeLimit: 60, timeBonus: 0.7, targetCount: 27,
+    },
+    {
+        num: '1-9', theme: '大综合', keywords: '重力补位 · 彩虹 · 变色 · 倒计时 · 更多泡泡',
+        narrative: '结合先前所有关卡的特点，完成最终挑战。',
+        outro: '全部通关！九段泡泡之旅，圆满落幕。',
+        gridCols: 8, gridRows: 8, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        dynamic: false, gravity: true, rainbow: true, changing: true,
+        timeLimit: 75, timeBonus: 0.6, targetCount: 64,
     },
 ];
 
@@ -148,6 +180,7 @@ export class GameManager extends Component {
     private lastPopTime = 0;
     private timerLeft = 0;
     private playing = false;
+    private chgAcc = 0;
 
     // 失败机制：本关累计捏错次数
     private mistakes = 0;
@@ -216,6 +249,18 @@ export class GameManager extends Component {
                 this.timeUp();
             }
             this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
+        }
+        // 变色泡泡颜色循环（统一由本组件驱动，避免节点未激活导致调度丢失）
+        if (this.playing) {
+            this.chgAcc += dt;
+            if (this.chgAcc >= 1.2) {
+                this.chgAcc = 0;
+                for (const b of this.bubbleList) {
+                    if (!b.isValid) continue;
+                    const c = b.getComponent(Bubble);
+                    if (c && c.changing && !c.isPopped) c.cycleNext();
+                }
+            }
         }
     }
 
@@ -304,7 +349,7 @@ export class GameManager extends Component {
                 this.loadLevel(0);
             },
         });
-        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹 · 爆发', buttons);
+        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹 · 空间 · 时空 · 圆舞 · 变色 · 大综合', buttons);
     }
 
     private firstIncomplete(save: SaveData): number {
@@ -363,7 +408,7 @@ export class GameManager extends Component {
             lastClip: () => (this.popAudio.clip ? this.popAudio.clip.name : ''),
             bubbles: () => this.bubbleList.filter((b) => b.isValid).map((b) => {
                 const c = b.getComponent(Bubble);
-                return { x: b.position.x, y: b.position.y, color: c ? c.color : '', rainbow: c ? c.rainbow : false, popped: c ? c.isPopped : true };
+                return { x: b.position.x, y: b.position.y, color: c ? c.color : '', rainbow: c ? c.rainbow : false, changing: c ? c.changing : false, popped: c ? c.isPopped : true };
             }),
         };
 
@@ -387,26 +432,88 @@ export class GameManager extends Component {
         this.bubbleList.length = 0;
     }
 
-    /** 按行列生成网格：泡泡大小与格距固定，只有数量随关卡递增，网格整体居中 */
+    /** 按形状生成网格：泡泡大小与格距固定，只按关卡形状摆放（rect/拱形/凹形/圆形/心形） */
     private spawnGrid(cfg: LevelConfig) {
         const CELL = 88;     // 固定格距（所有关卡一致）
         const SCALE = 0.95;  // 固定泡泡尺寸（所有关卡一致）
-        const x0 = -(cfg.gridCols - 1) * CELL / 2;
-        const centerY = -70;
-        const yTop = centerY + (cfg.gridRows - 1) * CELL / 2;
-        // 静态教学关：棋盘颜色取队列颜色洗牌，保证队列一定能被捏完
-        const forced = !cfg.dynamic ? this.shuffled(this.queue.slice()) : null;
+        // 静态教学关（1-1）：棋盘颜色取队列颜色洗牌，保证队列一定能被捏完
+        // 重力/变色关：随机配色，特殊泡泡才有机会出现
+        const forced = (!cfg.dynamic && !cfg.gravity && !cfg.changing) ? this.shuffled(this.queue.slice()) : null;
         let i = 0;
         for (let r = 0; r < cfg.gridRows; r++) {
-            const y = yTop - r * CELL;
             for (let c = 0; c < cfg.gridCols; c++) {
-                const x = x0 + c * CELL;
+                if (!this.shapeOK(cfg, r, c)) continue;
+                const pos = this.gridPos(cfg, r, c);
+                const x = pos.x;
+                const y = pos.y;
                 const bubble = this.createBubble(new Vec3(x, y, 0), cfg, SCALE, forced ? forced[i] : undefined);
                 this.bubbleContainer.addChild(bubble);
                 this.bubbleList.push(bubble);
+                (bubble as any).__cell = { r, c };
                 i++;
             }
         }
+        this.ensurePalette(cfg);
+    }
+
+    /** 保证棋盘上每个可用颜色至少出现一次（避免某种颜色被随机吃光导致卡关） */
+    private ensurePalette(cfg: LevelConfig) {
+        for (const key of cfg.colors) {
+            const has = this.bubbleList.some((b) => {
+                if (!b.isValid) return false;
+                const c = b.getComponent(Bubble);
+                return !!c && !c.isPopped && !c.changing && !c.rainbow && c.color === key;
+            });
+            if (has) continue;
+            const dup = this.bubbleList.find((b) => {
+                if (!b.isValid) return false;
+                const c = b.getComponent(Bubble);
+                if (!c || c.isPopped || c.changing || c.rainbow) return false;
+                return c.color !== key && cfg.colors.includes(c.color);
+            });
+            if (dup) dup.getComponent(Bubble)!.setColor(key);
+        }
+    }
+
+    /** 形状判定：是否允许在该行该列放泡泡 */
+    private shapeOK(cfg: LevelConfig, r: number, c: number): boolean {
+        const W = cfg.gridCols;
+        const H = cfg.gridRows;
+        const mid = (W - 1) / 2;
+        if (cfg.shape === 'arch') {
+            // 拱形（凸）：顶部窄、往下变宽后保持全宽
+            const half = r <= 2 ? Math.max(0, r) : 3;
+            return Math.abs(c - Math.floor(mid)) <= half;
+        }
+        if (cfg.shape === 'concave') {
+            // 凹形：上下满排、中段向内收窄
+            if (r <= 1 || r >= H - 2) return true;
+            return Math.abs(c - Math.floor(mid)) <= 2;
+        }
+        if (cfg.shape === 'circle') {
+            const cx = mid;
+            const cy = (H - 1) / 2;
+            return (c - cx) * (c - cx) + (r - cy) * (r - cy) <= 3.3 * 3.3;
+        }
+        if (cfg.shape === 'heart') {
+            // 手工心形轮廓：顶部两瓣 + 收窄到底部尖点（7×7，共 27 格）
+            if (r === 0) return c >= 1 && c <= 5 && (c === 1 || c === 2 || c === 4 || c === 5);
+            if (r === 1 || r === 2) return true;
+            if (r === 3) return c >= 1 && c <= 5;
+            if (r === 4) return c >= 2 && c <= 4;
+            if (r === 5) return c === 3;
+            return false;
+        }
+        return true;
+    }
+
+    /** 网格坐标：y 从顶部向下递减（r=0 最上），整体垂直居中 */
+    private gridPos(cfg: LevelConfig, r: number, c: number): Vec3 {
+        const CELL = 88;
+        const x0 = -(cfg.gridCols - 1) * CELL / 2;
+        const centerY = -70;
+        const yTop = centerY + (cfg.gridRows - 1) * CELL / 2;
+        return new Vec3(x0 + c * CELL, yTop - r * CELL, 0);
     }
 
     private createBubble(pos: Vec3, cfg: LevelConfig, scale: number, forcedColor?: string): Node {
@@ -415,7 +522,11 @@ export class GameManager extends Component {
         bubble.setScale(scale, scale, 1);
         const comp = bubble.getComponent(Bubble)!;
         // 创建时只出普通颜色；彩虹泡泡统一由 spawnRainbow 单点刷新
-        comp.setColor(forcedColor ?? cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+        if (!forcedColor && cfg.changing && Math.random() < 0.18) {
+            comp.setChanging();
+        } else {
+            comp.setColor(forcedColor ?? cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+        }
         bubble.on('bubblePop', this.onBubblePop, this);
         return bubble;
     }
@@ -434,6 +545,66 @@ export class GameManager extends Component {
                 console.error('[BubbleWrap] respawn err', e);
             }
         }, 0.16);
+    }
+
+    /** 重力补位：销毁被击破泡泡，同列上方泡泡下落，顶部补入新泡泡 */
+    private gravityRefill(node: Node) {
+        if (!node || !node.isValid) return;
+        const cfg = LEVELS[this.currentLevel];
+        const cell = (node as any).__cell as { r: number; c: number } | null;
+        const comp = node.getComponent(Bubble);
+        if (comp && comp.rainbow && this.rainbowNode === node) this.rainbowNode = null;
+        node.destroy();
+        const idx = this.bubbleList.indexOf(node);
+        if (idx >= 0) this.bubbleList.splice(idx, 1);
+        if (!cell) return;
+
+        const col = cell.c;
+        const allowed: number[] = [];
+        for (let r = 0; r < cfg.gridRows; r++) {
+            if (this.shapeOK(cfg, r, col)) allowed.push(r);
+        }
+        // 该列存活的普通泡泡（排除其他正处于击破动画中的）
+        const live = this.bubbleList.filter((b) => {
+            if (!b.isValid) return false;
+            const c2 = (b as any).__cell as { c: number } | null;
+            if (!c2 || c2.c !== col) return false;
+            const bc = b.getComponent(Bubble);
+            return !!bc && !bc.isPopped;
+        });
+        live.sort((a, b) => ((a as any).__cell.r as number) - ((b as any).__cell.r as number));
+
+        // 存活泡泡压到最底部，上方空出的格位补新泡泡
+        const take = live.length;
+        const bottomRows = allowed.slice(allowed.length - take);
+        live.forEach((nd, k) => {
+            const target = this.gridPos(cfg, bottomRows[k], col);
+            (nd as any).__cell.r = bottomRows[k];
+            tween(nd).to(0.14, { position: target }, { easing: 'quadIn' }).start();
+        });
+        const topRows = allowed.slice(0, allowed.length - take);
+        const created: Node[] = [];
+        topRows.forEach((rd) => {
+            const target = this.gridPos(cfg, rd, col);
+            const pos = new Vec3(target.x, target.y + 320, 0);
+            const nb = this.createBubble(pos, cfg, 0.95);
+            this.bubbleContainer.addChild(nb);
+            this.bubbleList.push(nb);
+            (nb as any).__cell = { r: rd, c: col };
+            tween(nb).to(0.16 + Math.random() * 0.1, { position: target }, { easing: 'quadIn' }).start();
+            created.push(nb);
+        });
+        // 防卡关：当前目标色在场上缺失时，把补位泡泡强制换成目标色
+        const targetKey = this.queue[this.queueIdx];
+        const hasTarget = this.bubbleList.some((b) => {
+            if (!b.isValid) return false;
+            const c = b.getComponent(Bubble);
+            return !!c && !c.isPopped && !c.changing && !c.rainbow && c.color === targetKey;
+        });
+        if (!hasTarget && created.length > 0 && targetKey) {
+            const nb = created[created.length - 1];
+            if (nb.isValid) nb.getComponent(Bubble)!.setColor(targetKey);
+        }
     }
 
     private shuffled<T>(arr: T[]): T[] {
@@ -536,8 +707,8 @@ export class GameManager extends Component {
                     const matched = comp.rainbow || comp.color === target;
                     if (matched) {
                         comp.pop();
-                    } else if (cfg.dynamic) {
-                        // 动态关卡：点错也会破裂并原位刷新（判错由 onBubblePop 统一计数）
+                    } else if (cfg.dynamic || cfg.gravity) {
+                        // 动态/重力关卡：点错也会破裂（判错由 onBubblePop 统一计数，补位由刷新机制负责）
                         comp.pop();
                     } else {
                         // 教学关卡：点错不破裂，柔和提示；同一次触摸只记一次失误
@@ -558,8 +729,6 @@ export class GameManager extends Component {
             const cfg = LEVELS[this.currentLevel];
             const target = this.queue[this.queueIdx];
             const matched = isRainbow || colorKey === target;
-            const fromChain = !!(node as any).__chain;
-            (node as any).__chain = false;
 
             if (matched) {
                 const pitch = (isRainbow ? 1.5 : COLORS[colorKey].pitch);
@@ -570,10 +739,6 @@ export class GameManager extends Component {
                     this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
                 }
 
-                if (cfg.chain && !fromChain && !isRainbow) {
-                    this.chainSameColor(node, colorKey);
-                }
-
                 this.advanceQueue();
 
                 // 彩虹泡泡规则：用掉后场上即无彩虹，需连续正确点击 12 个
@@ -581,13 +746,11 @@ export class GameManager extends Component {
                 if (isRainbow) {
                     this.rainbowNode = null;
                     this.rainbowStreak = 0;
-                } else if (cfg.rainbow && !fromChain && !this.isRainbowActive()) {
+                } else if (cfg.rainbow && !this.isRainbowActive()) {
                     this.rainbowStreak++;
                     if (this.rainbowStreak >= RAINBOW_STREAK_NEED) this.spawnRainbow();
                 }
                 this.updateRainbowHint();
-            } else if (fromChain) {
-                // 连锁带出的泡泡：点击时目标色已推进，不判错、不扣时间
             } else {
                 this.playClip('wrong', 0.55);
                 this.registerWrong();
@@ -597,8 +760,10 @@ export class GameManager extends Component {
                 }
             }
 
-            // 动态刷新（关键：先补位，粒子异常不能阻塞补位）
-            if (cfg.dynamic) {
+            // 刷新（关键：先补位，粒子异常不能阻塞补位）
+            if (cfg.gravity) {
+                this.scheduleOnce(() => this.gravityRefill(node), 0.15);
+            } else if (cfg.dynamic) {
                 this.respawnBubble(node);
             }
 
@@ -615,27 +780,6 @@ export class GameManager extends Component {
             }
         } catch (e) {
             console.error('[BubbleWrap] pop err', e);
-        }
-    }
-
-    private chainSameColor(from: Node, colorKey: string) {
-        const cfg = LEVELS[this.currentLevel];
-        const fromPos = from.position;
-        for (const other of this.bubbleList) {
-            if (other === from || !other.isValid) continue;
-            const comp = other.getComponent(Bubble);
-            if (!comp || comp.isPopped || comp.rainbow || comp.color !== colorKey) continue;
-            const dx = other.position.x - fromPos.x;
-            const dy = other.position.y - fromPos.y;
-            if (dx * dx + dy * dy <= (140 * from.scale.x + 50) ** 2 && Math.random() < 0.45) {
-                const node = other;
-                this.scheduleOnce(() => {
-                    if (node.isValid && !node.getComponent(Bubble)!.isPopped) {
-                        (node as any).__chain = true;
-                        node.getComponent(Bubble)!.pop();
-                    }
-                }, randomRange(0.08, 0.18));
-            }
         }
     }
 
@@ -709,7 +853,7 @@ export class GameManager extends Component {
         const candidates = this.bubbleList.filter((b) => {
             if (!b.isValid) return false;
             const c = b.getComponent(Bubble);
-            return !!c && !c.isPopped && !c.rainbow;
+            return !!c && !c.isPopped && !c.rainbow && !c.changing;
         });
         if (candidates.length === 0) return;
         const target = candidates[randomRangeInt(0, candidates.length)];
@@ -891,7 +1035,7 @@ export class GameManager extends Component {
     private drawProgress() {
         if (!this.progressG) return;
         this.progressG.clear();
-        const spacing = LEVELS.length >= 5 ? 48 : 72;
+        const spacing = LEVELS.length >= 7 ? 42 : LEVELS.length >= 5 ? 60 : 72;
         const x0 = -((LEVELS.length - 1) * spacing) / 2;
         for (let i = 0; i < LEVELS.length; i++) {
             const x = x0 + i * spacing;
