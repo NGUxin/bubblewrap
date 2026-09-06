@@ -955,52 +955,37 @@ export class GameManager extends Component {
     }
 
     private renderTargetBar() {
-        // 完整队列：每个目标一个槽位，长条向左滑动
+        // 单个当前目标圆点（不再显示整条滑动队列）
         this.targetStrip.removeAllChildren();
         this.targetSlots.length = 0;
-        const cfg = LEVELS[this.currentLevel];
-        const step = this.slotStep;
-        for (let i = 0; i < cfg.targetCount; i++) {
-            const slot = new Node(`T${i}`);
-            slot.layer = Layers.Enum.UI_2D;
-            slot.addComponent(UITransform).setContentSize(34, 34);
-            slot.setPosition(i * step, 0, 0);
-            slot.addComponent(Graphics);
-            this.targetStrip.addChild(slot);
-            this.targetSlots.push(slot);
-        }
-        this.targetStrip.setPosition(0, 0, 0);
+        const slot = new Node('Target');
+        slot.layer = Layers.Enum.UI_2D;
+        slot.addComponent(UITransform).setContentSize(86, 86);
+        slot.setPosition(0, 0, 0);
+        slot.addComponent(Graphics);
+        this.targetStrip.addChild(slot);
+        this.targetSlots.push(slot);
         this.highlightCurrent();
     }
 
     private highlightCurrent() {
-        for (let i = 0; i < this.targetSlots.length; i++) {
-            const node = this.targetSlots[i];
-            const g = node.getComponent(Graphics)!;
-            // 每个槽位固定对应队列中的一个目标；当前目标 = 第 queueIdx 个槽位
-            const isCur = i === this.queueIdx;
-            node.setScale(isCur ? 1.35 : 1, isCur ? 1.35 : 1, 1);
-            const key = i < this.queue.length ? this.queue[i] : '';
-            g.clear();
-            if (key) {
-                const tint = COLORS[key].tint.clone();
-                tint.a = isCur ? 255 : 130;
-                g.fillColor = tint;
-                g.circle(0, 0, 15);
-                g.fill();
-            }
-            // 高亮当前：白色圆环
-            if (isCur) {
-                g.lineWidth = 5;
-                g.strokeColor = new Color(255, 255, 255, 255);
-                g.circle(0, 0, 18);
-                g.stroke();
-            }
+        if (this.targetSlots.length === 0) return;
+        const node = this.targetSlots[0];
+        const g = node.getComponent(Graphics)!;
+        const key = this.queue[this.queueIdx];
+        g.clear();
+        if (key) {
+            const tint = COLORS[key].tint.clone();
+            tint.a = 255;
+            g.fillColor = tint;
+            g.circle(0, 0, 32);
+            g.fill();
         }
-        // 让当前目标保持在屏幕中央（整体左滑）
-        const step = this.slotStep;
-        tween(this.targetStrip).stop();
-        tween(this.targetStrip).to(0.18, { position: new Vec3(-this.queueIdx * step, 0, 0) }, { easing: 'quadOut' }).start();
+        // 白色高亮环，突出“当前目标”
+        g.lineWidth = 5;
+        g.strokeColor = new Color(255, 255, 255, 255);
+        g.circle(0, 0, 36);
+        g.stroke();
     }
 
     private advanceQueue() {
@@ -1308,42 +1293,36 @@ export class GameManager extends Component {
         const dark = new Color(80, 110, 135, 255);
         const gray = new Color(145, 165, 185, 255);
 
-        this.titleLabel = this.makeLabel('', 40, dark, new Vec3(0, 596, 0));
-        this.subtitleLabel = this.makeLabel('', 22, gray, new Vec3(0, 552, 0));
-        this.remainLabel = this.makeLabel('', 28, dark, new Vec3(250, 596, 0));
-        this.remainLabel.node.getComponent(UITransform)!.setContentSize(200, 40);
-        this.remainLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
+        // 左上：关卡名；右上：计时；中央：当前目标
+        this.titleLabel = this.makeLabel('', 27, dark, new Vec3(-220, 605, 0));
+        this.titleLabel.node.getComponent(UITransform)!.setContentSize(360, 40);
+        this.titleLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this.subtitleLabel = this.makeLabel('', 20, gray, new Vec3(-220, 575, 0));
+        this.subtitleLabel.node.getComponent(UITransform)!.setContentSize(360, 30);
+        this.subtitleLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this.subtitleLabel.fontSize = 18;
+        this.remainLabel = this.makeLabel('', 22, dark, new Vec3(0, 468, 0));
+        this.remainLabel.node.getComponent(UITransform)!.setContentSize(260, 34);
         this.comboLabel = this.makeLabel('', 44, new Color(255, 110, 150, 255), new Vec3(0, 410, 0));
-        this.timerLabel = this.makeLabel('', 28, dark, new Vec3(-250, 596, 0));
-        this.timerLabel.node.getComponent(UITransform)!.setContentSize(200, 40);
-        this.timerLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this.timerLabel = this.makeLabel('', 26, dark, new Vec3(225, 605, 0));
+        this.timerLabel.node.getComponent(UITransform)!.setContentSize(240, 40);
+        this.timerLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
 
-        // 失误计数（右上，副标题下方；≥3 次变红警示）
-        this.missLabel = this.makeLabel('', 24, COLOR_GRAY, new Vec3(270, 552, 0));
-        this.missLabel.node.getComponent(UITransform)!.setContentSize(170, 36);
+        // 失误计数（右上，计时下方；≥3 次变红警示）
+        this.missLabel = this.makeLabel('', 20, COLOR_GRAY, new Vec3(225, 570, 0));
+        this.missLabel.node.getComponent(UITransform)!.setContentSize(240, 30);
         this.missLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
         // 彩虹泡泡提示（棋盘上方）
-        this.rainbowLabel = this.makeLabel('', 24, COLOR_PURPLE, new Vec3(0, 360, 0));
+        this.rainbowLabel = this.makeLabel('', 22, COLOR_PURPLE, new Vec3(0, 428, 0));
 
-        // 顶部目标颜色队列
+        // “目标”提示字 + 单个大目标圆点
+        this.makeLabel('目标', 18, gray, new Vec3(0, 628, 0));
         this.targetBar = new Node('TargetBar');
         this.targetBar.layer = Layers.Enum.UI_2D;
-        this.targetBar.addComponent(UITransform).setContentSize(720, 70);
-        this.targetBar.setPosition(0, 500, 0);
+        this.targetBar.addComponent(UITransform).setContentSize(100, 100);
+        this.targetBar.setPosition(0, 560, 0);
         this.node.addChild(this.targetBar);
-        this.targetStrip = new Node('TargetStrip');
-        this.targetStrip.layer = Layers.Enum.UI_2D;
-        this.targetStrip.addComponent(UITransform).setContentSize(2400, 70);
-        this.targetStrip.setPosition(0, 0, 0);
-        this.targetBar.addChild(this.targetStrip);
-
-        // 关卡进度圆点
-        const prog = new Node('Progress');
-        prog.layer = Layers.Enum.UI_2D;
-        prog.addComponent(UITransform).setContentSize(240, 40);
-        prog.setPosition(0, 462, 0);
-        this.node.addChild(prog);
-        this.progressG = prog.addComponent(Graphics);
+        this.targetStrip = this.targetBar;
 
         this.buildOverlay();
     }
