@@ -93,11 +93,11 @@ const LEVELS: LevelConfig[] = [
         timeLimit: 55, timeBonus: 0.8, targetCount: 42,
     },
     {
-        num: '1-8', theme: '变色', keywords: '心形棋盘 · 彩虹 · 变色泡泡 · 倒计时',
+        num: '1-8', theme: '变色', keywords: '心形棋盘 · 变色泡泡 · 倒计时',
         narrative: '变色泡泡在红橙黄绿青蓝紫之间流动，等它变成目标色再点。',
         outro: '最终试炼——所有机制，一起爆发。',
         gridCols: 7, gridRows: 7, shape: 'heart', colors: ['red', 'yellow', 'blue'],
-        dynamic: false, gravity: true, rainbow: true, changing: true,
+        dynamic: false, gravity: true, rainbow: false, changing: true,
         timeLimit: 60, timeBonus: 0.7, targetCount: 27,
     },
     {
@@ -706,7 +706,7 @@ export class GameManager extends Component {
             this.scheduleOnce(() => {
                 try { this.runSnakeBatch(); }
                 catch (e) { console.error('[BubbleWrap] snake batch err', e); this.snakeBusy = false; }
-            }, 0.08);
+            }, 0.04);
         }
     }
 
@@ -725,7 +725,7 @@ export class GameManager extends Component {
             const c = b.getComponent(Bubble);
             return !!c && !c.isPopped && (b as any).__pi !== undefined;
         }).sort((a, b) => ((a as any).__pi as number) - ((b as any).__pi as number));
-        const stepDelay = 0.012;
+        const stepDelay = 0.006;
         let lastDelay = 0;
         live.forEach((nd, idx) => {
             const newPi = k + idx;
@@ -736,7 +736,7 @@ export class GameManager extends Component {
             lastDelay = Math.max(lastDelay, delay);
             this.scheduleOnce(() => {
                 if (nd.isValid) {
-                    tween(nd).to(0.12, { position: targetPos }, { easing: 'quadIn' }).start();
+                    tween(nd).to(0.08, { position: targetPos }, { easing: 'quadIn' }).start();
                 }
             }, delay);
         });
@@ -750,13 +750,13 @@ export class GameManager extends Component {
             this.bubbleList.push(nb);
             (nb as any).__pi = j;
             nb.setScale(0.05, 0.05, 1);
-            const delay = j * 0.03;
+            const delay = j * 0.015;
             lastDelay = Math.max(lastDelay, delay);
             this.scheduleOnce(() => {
                 if (!nb.isValid) return;
                 tween(nb).parallel(
-                    tween().to(0.14, { position: target }, { easing: 'quadOut' }),
-                    tween().to(0.14, { scale: new Vec3(0.95, 0.95, 1) }, { easing: 'quadOut' }),
+                    tween().to(0.1, { position: target }, { easing: 'quadOut' }),
+                    tween().to(0.1, { scale: new Vec3(0.95, 0.95, 1) }, { easing: 'quadOut' }),
                 ).start();
             }, delay);
         }
@@ -779,7 +779,7 @@ export class GameManager extends Component {
                 console.error('[BubbleWrap] snake tail err', e);
                 this.snakeBusy = false;
             }
-        }, lastDelay + 0.25);
+        }, lastDelay + 0.15);
     }
 
     private hasLiveColor(key: string): boolean {
