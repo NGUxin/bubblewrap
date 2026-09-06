@@ -30,6 +30,7 @@ interface LevelConfig {
 // 难度常量
 const MISTAKE_LIMIT = 5;         // 每关累计捏错上限，达到即挑战失败
 const RAINBOW_STREAK_NEED = 12;  // 彩虹泡泡用掉后，需连续正确点击的泡泡数
+const CHANGING_MOVE_INTERVAL = 5; // 变色泡泡每隔几秒随机换一次位置
 const COLOR_GRAY = new Color(145, 165, 185, 255);
 const COLOR_WARN = new Color(232, 84, 84, 255);
 const COLOR_PURPLE = new Color(190, 120, 255, 255);
@@ -429,7 +430,13 @@ export class GameManager extends Component {
         // 彩虹关：开局场上即有一个彩虹泡泡（同一时间仅一个）
         if (cfg.rainbow) this.spawnRainbow();
         this.updateRainbowHint();
+        // 防卡关：开局当前目标色一定在场上
+        this.ensureTargetColorAvailable();
         this.renderTargetBar();
+
+        // 变色关：定时把变色泡泡挪到随机新位置（先清旧调度避免重复）
+        this.unschedule(this.relocateChangingBubbles);
+        if (cfg.changing) this.schedule(this.relocateChangingBubbles, CHANGING_MOVE_INTERVAL);
 
         // 调试钩子（供自动化验证 / 真机检查）
         (globalThis as any).__bubblewrap = {
@@ -612,8 +619,22 @@ export class GameManager extends Component {
             try {
                 if (!node.isValid) return;
                 comp.resetBubble();
-                // 始终补普通颜色；彩虹泡泡按「12 连正确」规则另行刷新，同一时间最多一个
-                comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+                // 每次刷新的硬保证：若棋盘其余泡泡中没有当前目标色，
+                // 这个新泡泡直接补成目标色；否则随机颜色
+                const target = this.queue[this.queueIdx];
+                const hasOtherTarget = !!target && this.bubbleList.some((b) => {
+                    if (b === node || !b.isValid) return false;
+                    const c = b.getComponent(Bubble);
+                    return !!c && !c.isPopped && !c.changing && !c.rainbow && c.color === target;
+                });
+                if (target && !hasOtherTarget) {
+                    comp.setColor(target);
+                } else {
+                    // 始终补普通颜色；彩虹泡泡按「12 连正确」规则另行刷新，同一时间最多一个
+                    comp.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+                }
+                // 双保险：刷新后再整体校验一次目标色存在性
+                this.ensureTargetColorAvailable();
             } catch (e) {
                 console.error('[BubbleWrap] respawn err', e);
             }
@@ -790,6 +811,51 @@ export class GameManager extends Component {
         });
     }
 
+    /** 防卡关核心：保证当前目标色在棋盘上一定存在（只认静态普通泡泡，变色/彩虹不算） */
+    private ensureTargetColorAvailable() {
+        const cfg = LEVELS[this.currentLevel];
+        const target = this.queue[this.queueIdx];
+        if (!target) return;
+        if (this.hasLiveColor(target)) return;
+        // 找一个普通活泡泡转换为目标色
+        const dup = this.bubbleList.find((b) => {
+            if (!b.isValid) return false;
+            const c = b.getComponent(Bubble);
+            return !!c && !c.isPopped && !c.changing && !c.rainbow
+                && c.color !== target && cfg.colors.includes(c.color);
+        });
+        if (dup) dup.getComponent(Bubble)!.setColor(target);
+    }
+
+    /** 变色泡泡迁移：每隔 CHANGING_MOVE_INTERVAL 秒，把场上变色泡泡挪到随机新泡泡上 */
+    private relocateChangingBubbles() {
+        if (!this.playing) return;
+        const cfg = LEVELS[this.currentLevel];
+        if (!cfg.changing) return;
+        const changingNodes = this.bubbleList.filter((b) => {
+            if (!b.isValid) return false;
+            const c = b.getComponent(Bubble);
+            return !!c && !c.isPopped && c.changing;
+        });
+        if (changingNodes.length === 0) return;
+        // 候选：未破裂的普通泡泡（非变色/非彩虹），洗牌后依次取用保证目标互不重复
+        const candidates = this.shuffled(this.bubbleList.filter((b) => {
+            if (!b.isValid) return false;
+            const c = b.getComponent(Bubble);
+            return !!c && !c.isPopped && !c.changing && !c.rainbow;
+        }));
+        let ci = 0;
+        for (const old of changingNodes) {
+            if (ci >= candidates.length) break;
+            const next = candidates[ci++];
+            // 旧位还原为普通颜色，新位开始变色循环（迁移不改变变色泡泡数量）
+            old.getComponent(Bubble)!.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+            next.getComponent(Bubble)!.setChanging();
+        }
+        // 迁移可能吃掉最后一个目标色泡泡——补回
+        this.ensureTargetColorAvailable();
+    }
+
     private shuffled<T>(arr: T[]): T[] {
         const a = arr.slice();
         for (let i = a.length - 1; i > 0; i--) {
@@ -864,6 +930,8 @@ export class GameManager extends Component {
         const cfg = LEVELS[this.currentLevel];
         this.remainLabel.string = `剩余 ${Math.max(cfg.targetCount - this.queueIdx, 0)}`;
         this.highlightCurrent();
+        // 目标推进后，新目标色可能已被吃光——立即补上
+        this.ensureTargetColorAvailable();
     }
 
     // ---------------- 交互 ----------------
@@ -1051,6 +1119,8 @@ export class GameManager extends Component {
         this.rainbowNode = target;
         this.rainbowStreak = 0;
         this.updateRainbowHint();
+        // 彩虹转换可能吃掉最后一个目标色泡泡——补回
+        this.ensureTargetColorAvailable();
     }
 
     private updateRainbowHint() {
