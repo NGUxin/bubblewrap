@@ -680,11 +680,12 @@ export class GameManager extends Component {
         }
     }
 
-    /** 逐列路径：始终从左往右、列内自上而下（新泡泡从最左列进入） */
+    /** S 型路径：第 1 列自上而下 → 底部接第 2 列自下而上 → 顶部接第 3 列自上而下… */
     private makeSnakeCells(cfg: LevelConfig): { r: number; c: number }[] {
         const list: { r: number; c: number }[] = [];
         for (let c = 0; c < cfg.gridCols; c++) {
-            for (let r = 0; r < cfg.gridRows; r++) {
+            for (let k = 0; k < cfg.gridRows; k++) {
+                const r = (c % 2 === 0) ? k : (cfg.gridRows - 1 - k);
                 if (this.shapeOK(cfg, r, c)) list.push({ r, c });
             }
         }
