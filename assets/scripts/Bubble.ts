@@ -1,5 +1,5 @@
-import { _decorator, Component, Sprite, SpriteFrame, Color, tween, Vec3 } from 'cc';
-import { COLORS, RAINBOW_SEQ, BUBBLE_FRAMES } from './ColorDefs';
+import { _decorator, Component, Node, Sprite, SpriteFrame, Color, tween, Vec3, UITransform, Graphics } from 'cc';
+import { COLORS, BUBBLE_FRAMES } from './ColorDefs';
 const { ccclass, property } = _decorator;
 
 @ccclass('Bubble')
@@ -12,6 +12,7 @@ export class Bubble extends Component {
     private _isPop = false;
     private sprite: Sprite = null!;
     private originScale = 1;
+    private baseFrame: SpriteFrame | null = null;
     private colorKey = 'yellow';
     private isRainbow = false;
     private isChanging = false;
@@ -36,12 +37,14 @@ export class Bubble extends Component {
 
     onLoad() {
         this.sprite = this.getComponent(Sprite)!;
+        this.baseFrame = this.sprite.spriteFrame;
         this.originScale = this.node.scale.x;
     }
 
     /** 设置泡泡颜色（普通泡泡） */
     setColor(key: string) {
         this.stopChanging();
+        this.clearRainbowRing();
         this.colorKey = key;
         this.isRainbow = false;
         tween(this.sprite).stop();
@@ -61,22 +64,22 @@ export class Bubble extends Component {
     /** 设置为彩虹泡泡：颜色循环流动，可匹配任意目标色 */
     setRainbow() {
         this.stopChanging();
+        this.clearRainbowRing();
         this.colorKey = 'rainbow';
         this.isRainbow = true;
+        this.isChanging = false;
         const sp = this.getComponent(Sprite)!;
         this.sprite = sp;
         tween(this.sprite).stop();
-        const seq: Color[] = RAINBOW_SEQ;
-        let idx = Math.floor(Math.random() * seq.length);
-        const cycle = () => {
-            idx = (idx + 1) % seq.length;
-            tween(sp).to(0.28, { color: seq[idx] }).call(cycle).start();
-        };
-        tween(sp).to(0.28, { color: seq[idx] }).call(cycle).start();
+        // 彩虹固定为暖白膜面 + 淡紫标识环：不再循环变色，避免与变色泡泡混淆
+        if (this.baseFrame) sp.spriteFrame = this.baseFrame;
+        sp.color = new Color(255, 247, 238, 255);
+        this.ensureRainbowRing();
     }
 
     /** 变色泡泡：红→橙→黄→绿→青→蓝→紫 循环，当前颜色 = 目标色时才可击破 */
     setChanging() {
+        this.clearRainbowRing();
         this.isRainbow = false;
         this.isChanging = true;
         this.changeIdx = randomIndex();
@@ -113,6 +116,7 @@ export class Bubble extends Component {
         if (this._isPop) return;
         this._isPop = true;
         this.stopChanging();
+        this.clearRainbowRing();
         tween(this.sprite).stop();
         tween(this.node).stop();
         tween(this.node)
@@ -138,6 +142,7 @@ export class Bubble extends Component {
     resetBubble() {
         this._isPop = false;
         this.stopChanging();
+        this.clearRainbowRing();
         tween(this.node).stop();
         tween(this.sprite).stop();
         this.node.setScale(this.originScale, this.originScale, 1);
@@ -152,6 +157,23 @@ export class Bubble extends Component {
         } else {
             this.sprite.color = COLORS[this.colorKey] ? COLORS[this.colorKey].tint : Color.WHITE;
         }
+    }
+
+    private ensureRainbowRing() {
+        if (this.node.getChildByName('RainbowRing')) return;
+        const ring = new Node('RainbowRing');
+        ring.addComponent(UITransform).setContentSize(64, 64);
+        const g = ring.addComponent(Graphics);
+        g.lineWidth = 3.5;
+        g.strokeColor = new Color(178, 150, 255, 255);
+        g.circle(0, 0, 30);
+        g.stroke();
+        this.node.addChild(ring);
+    }
+
+    private clearRainbowRing() {
+        const ring = this.node.getChildByName('RainbowRing');
+        if (ring) ring.destroy();
     }
 }
 
