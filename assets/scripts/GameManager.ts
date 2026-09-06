@@ -35,13 +35,15 @@ const COLOR_GRAY = new Color(145, 165, 185, 255);
 const COLOR_WARN = new Color(232, 84, 84, 255);
 const COLOR_PURPLE = new Color(190, 120, 255, 255);
 
-// 认色 → 流动 → 限时 → 彩虹 → 空间 → 时空 → 圆舞 → 变色 → 大综合
+// 必经教学(2) → 第一章·静态(原位刷新:限时→5色→彩虹) / 第二章·动态(重力:重力→限时→5色→彩虹)
+const PALETTE3 = ['red', 'yellow', 'blue'];
+const PALETTE5 = ['red', 'yellow', 'blue', 'green', 'violet'];
 const LEVELS: LevelConfig[] = [
     {
         num: '1-1', theme: '认色', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
         narrative: '在整齐的泡泡纸中，寻找指定颜色。',
         outro: '棋盘开始变化——新的泡泡会不断补上。',
-        gridCols: 3, gridRows: 4, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        gridCols: 3, gridRows: 4, shape: 'rect', colors: PALETTE3,
         dynamic: false, gravity: false, rainbow: false, changing: false,
         timeLimit: 0, timeBonus: 0, targetCount: 12,
     },
@@ -49,77 +51,102 @@ const LEVELS: LevelConfig[] = [
         num: '1-2', theme: '流动', keywords: '动态刷新 · 红黄蓝 · 持续寻找',
         narrative: '每捏破一个，就会有新的泡泡补上。',
         outro: '泡泡在流动了——现在，时间开始计时。',
-        gridCols: 4, gridRows: 5, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        gridCols: 4, gridRows: 5, shape: 'rect', colors: PALETTE3,
         dynamic: true, gravity: false, rainbow: false, changing: false,
         timeLimit: 0, timeBonus: 0, targetCount: 20,
     },
     {
-        num: '1-3', theme: '限时', keywords: '倒计时 · 动态刷新 · 红黄蓝',
-        narrative: '在有限时间里，尽可能完成颜色队列。',
-        outro: '彩虹泡泡出现了——它能匹配任意颜色。',
-        gridCols: 5, gridRows: 6, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        num: '1-3', theme: '限时', keywords: '倒计时 · 原位动态刷新',
+        narrative: '在有限时间里，尽可能完成颜色队列。（第一章 · 静态）',
+        outro: '颜色变多了——注意分辨五色泡泡。',
+        gridCols: 5, gridRows: 6, shape: 'rect', colors: PALETTE3,
         dynamic: true, gravity: false, rainbow: false, changing: false,
         timeLimit: 45, timeBonus: 0.8, targetCount: 30,
     },
     {
-        num: '1-4', theme: '彩虹', keywords: '彩虹泡泡 · 动态刷新 · 三色',
-        narrative: '彩虹泡泡能匹配队列中的任意颜色。',
-        outro: '空间开始流动——泡泡不再原地不动的等待。',
-        gridCols: 6, gridRows: 7, shape: 'rect', colors: ['red', 'yellow', 'blue'],
+        num: '1-4', theme: '五彩', keywords: '倒计时 · 原位刷新 · 五色',
+        narrative: '颜色增至五种，难度升级。',
+        outro: '彩虹泡泡加入了战场。',
+        gridCols: 6, gridRows: 7, shape: 'rect', colors: PALETTE5,
+        dynamic: true, gravity: false, rainbow: false, changing: false,
+        timeLimit: 50, timeBonus: 0.8, targetCount: 42,
+    },
+    {
+        num: '1-5', theme: '彩虹', keywords: '倒计时 · 原位刷新 · 五色 · 彩虹泡泡',
+        narrative: '彩虹泡泡能匹配任意颜色，助你完成限时挑战。',
+        outro: '第一章通关！准备进入动态世界。',
+        gridCols: 6, gridRows: 7, shape: 'rect', colors: PALETTE5,
         dynamic: true, gravity: false, rainbow: true, changing: false,
-        timeLimit: 0, timeBonus: 0, targetCount: 42,
-    },
-    {
-        num: '1-5', theme: '空间', keywords: '拱形棋盘 · 重力补位',
-        narrative: '泡泡不再待在原处——捏破后，上方泡泡会下落补位。',
-        outro: '空间在流动，时间也开始追赶你了。',
-        gridCols: 7, gridRows: 7, shape: 'arch', colors: ['red', 'yellow', 'blue'],
-        dynamic: false, gravity: true, rainbow: false, changing: false,
-        timeLimit: 0, timeBonus: 0, targetCount: 37,
-    },
-    {
-        num: '1-6', theme: '时空', keywords: '凹形棋盘 · 重力补位 · 倒计时',
-        narrative: '空间结构变了，倒计时也开始了。',
-        outro: '棋盘转了起来——下一个形状是什么？',
-        gridCols: 7, gridRows: 7, shape: 'concave', colors: ['red', 'yellow', 'blue'],
-        dynamic: false, gravity: true, rainbow: false, changing: false,
-        timeLimit: 50, timeBonus: 0.8, targetCount: 43,
-    },
-    {
-        num: '1-7', theme: '蛇行', keywords: '蛇形补位 · 倒计时',
-        narrative: '新泡泡从第一列出发，沿 S 型游到爆破点。',
-        outro: '心形棋盘准备好了——新的特殊泡泡即将登场。',
-        gridCols: 6, gridRows: 7, shape: 'rect', colors: ['red', 'yellow', 'blue'],
-        dynamic: false, gravity: true, snake: true, rainbow: false, changing: false,
         timeLimit: 55, timeBonus: 0.8, targetCount: 42,
     },
     {
-        num: '1-8', theme: '变色', keywords: '心形棋盘 · 变色泡泡 · 倒计时',
-        narrative: '变色泡泡在红橙黄绿青蓝紫之间流动，等它变成目标色再点。',
-        outro: '最终试炼——所有机制，一起爆发。',
-        gridCols: 7, gridRows: 7, shape: 'heart', colors: ['red', 'yellow', 'blue'],
-        dynamic: false, gravity: true, rainbow: false, changing: true,
-        timeLimit: 60, timeBonus: 0.7, targetCount: 27,
+        num: '2-1', theme: '重力', keywords: '重力补位 · 泡泡下落',
+        narrative: '捏破后上方泡泡下落补位，棋盘持续变化。（第二章 · 动态）',
+        outro: '时间也开始追赶了。',
+        gridCols: 5, gridRows: 6, shape: 'rect', colors: PALETTE3,
+        dynamic: false, gravity: true, rainbow: false, changing: false,
+        timeLimit: 0, timeBonus: 0, targetCount: 30,
     },
     {
-        num: '1-9', theme: '大综合', keywords: '重力补位 · 彩虹 · 变色 · 倒计时 · 更多泡泡',
-        narrative: '结合先前所有关卡的特点，完成最终挑战。',
-        outro: '全部通关！九段泡泡之旅，圆满落幕。',
-        gridCols: 8, gridRows: 8, shape: 'rect', colors: ['red', 'yellow', 'blue'],
-        dynamic: false, gravity: true, rainbow: true, changing: true,
-        timeLimit: 75, timeBonus: 0.6, targetCount: 64,
+        num: '2-2', theme: '时空', keywords: '重力补位 · 倒计时',
+        narrative: '空间在变化，时间在追赶。（空间 + 时间）',
+        outro: '泡泡颜色开始变多了。',
+        gridCols: 6, gridRows: 7, shape: 'rect', colors: PALETTE3,
+        dynamic: false, gravity: true, rainbow: false, changing: false,
+        timeLimit: 50, timeBonus: 0.8, targetCount: 42,
+    },
+    {
+        num: '2-3', theme: '五彩', keywords: '重力补位 · 倒计时 · 五色',
+        narrative: '重力加五色，难度升级。',
+        outro: '彩虹泡泡将降临动态棋盘。',
+        gridCols: 6, gridRows: 7, shape: 'rect', colors: PALETTE5,
+        dynamic: false, gravity: true, rainbow: false, changing: false,
+        timeLimit: 55, timeBonus: 0.7, targetCount: 42,
+    },
+    {
+        num: '2-4', theme: '爆发', keywords: '重力补位 · 倒计时 · 五色 · 彩虹',
+        narrative: '动态棋盘上的最终试炼。',
+        outro: '第二章通关！全章完结，圆满落幕。',
+        gridCols: 7, gridRows: 7, shape: 'rect', colors: PALETTE5,
+        dynamic: false, gravity: true, rainbow: true, changing: false,
+        timeLimit: 60, timeBonus: 0.7, targetCount: 49,
     },
 ];
+
+// 关卡分组：0/1 必经教学；2~4 第一章（静态·原位刷新）；5~8 第二章（动态·重力）
+const TUTORIAL_LEVELS = [0, 1];
+const STATIC_LEVELS = [2, 3, 4];
+const DYNAMIC_LEVELS = [5, 6, 7, 8];
 
 // ---------------- 存档 ----------------
 
 interface SaveData {
-    unlocked: number;
-    completed: number[];
+    version: number;
+    tutorialsDone: boolean;   // 两节必经教学是否完成
+    ch1: number[];            // 第一章（静态）已通关的全局关卡序号
+    ch2: number[];            // 第二章（动态）已通关的全局关卡序号
     bestCombo: number;
+    lastChapter: 0 | 1 | 2;   // 0=无 1=第一章 2=第二章（用于“继续游戏”）
 }
 
 const SAVE_KEY = 'bubblewrap_save_v1';
+
+function defaultSave(): SaveData {
+    return { version: 2, tutorialsDone: false, ch1: [], ch2: [], bestCombo: 0, lastChapter: 0 };
+}
+
+function chapterGroupOf(index: number): 'tutorial' | 'ch1' | 'ch2' {
+    if (index <= 1) return 'tutorial';
+    if (index <= 4) return 'ch1';
+    return 'ch2';
+}
+
+function completedListOf(save: SaveData, index: number): number[] {
+    const g = chapterGroupOf(index);
+    if (g === 'ch1') return save.ch1;
+    if (g === 'ch2') return save.ch2;
+    return save.tutorialsDone ? [0, 1] : [];
+}
 
 function storageGet(key: string): string | null {
     try {
@@ -146,14 +173,30 @@ function loadSave(): SaveData {
         const raw = storageGet(SAVE_KEY);
         if (raw) {
             const d = JSON.parse(raw);
+            // v2：教程 + 双章节
+            if (d.version === 2) {
+                return {
+                    version: 2,
+                    tutorialsDone: !!d.tutorialsDone,
+                    ch1: Array.isArray(d.ch1) ? d.ch1 : [],
+                    ch2: Array.isArray(d.ch2) ? d.ch2 : [],
+                    bestCombo: Number(d.bestCombo) || 0,
+                    lastChapter: d.lastChapter === 1 || d.lastChapter === 2 ? d.lastChapter : 0,
+                };
+            }
+            // v1 旧档迁移：曾通关即视为教程完成，已通关关卡按分组归位
+            const old = Array.isArray(d.completed) ? d.completed : [];
             return {
-                unlocked: Number(d.unlocked) || 0,
-                completed: Array.isArray(d.completed) ? d.completed : [],
+                version: 2,
+                tutorialsDone: old.length > 0,
+                ch1: old.filter((x: number) => x >= 2 && x <= 4),
+                ch2: old.filter((x: number) => x >= 5 && x <= 8),
                 bestCombo: Number(d.bestCombo) || 0,
+                lastChapter: 0,
             };
         }
     } catch { /* ignore */ }
-    return { unlocked: 0, completed: [], bestCombo: 0 };
+    return defaultSave();
 }
 
 function writeSave(d: SaveData) {
@@ -177,7 +220,6 @@ export class GameManager extends Component {
     private bubbleList: Node[] = [];
 
     private currentLevel = 0;
-    private maxUnlocked = 0;
     private combo = 0;
     private lastPopTime = 0;
     private timerLeft = 0;
@@ -347,47 +389,83 @@ export class GameManager extends Component {
 
     // ---------------- 标题 / 存档 ----------------
 
-    private showTitle() {
-        const save = loadSave();
-        this.maxUnlocked = save.unlocked;
-        this.drawProgress();
-        const hasProgress = save.completed.length > 0 || save.unlocked > 0;
-        this.playing = false;
-        const buttons: { label: string; action: () => void }[] = [];
-        buttons.push({
-            label: hasProgress ? '继续游戏' : '开始游戏',
+    private hasAnyProgress(save: SaveData): boolean {
+        return save.tutorialsDone || save.ch1.length > 0 || save.ch2.length > 0;
+    }
+
+    private isLevelDone(save: SaveData, index: number): boolean {
+        if (index <= 1) return save.tutorialsDone;
+        return completedListOf(save, index).includes(index);
+    }
+
+    private firstIncompleteIn(save: SaveData, list: number[]): number | null {
+        for (const i of list) {
+            if (!this.isLevelDone(save, i)) return i;
+        }
+        return null;
+    }
+
+    /** 教学完成后选择章节（第一章静态 / 第二章动态） */
+    private showChapterSelect() {
+        this.showOverlay('选择章节', '第一章：静态棋盘·原位刷新\n第二章：动态棋盘·重力补位', [{
+            label: '第一章（静态）',
             action: () => {
                 this.hideOverlay();
-                if (hasProgress) {
-                    const next = this.firstIncomplete(save);
-                    this.loadLevel(next);
-                } else {
+                const save = loadSave();
+                save.lastChapter = 1;
+                writeSave(save);
+                const next = this.firstIncompleteIn(save, STATIC_LEVELS);
+                this.loadLevel(next === null ? STATIC_LEVELS[0] : next);
+            },
+        }, {
+            label: '第二章（动态）',
+            action: () => {
+                this.hideOverlay();
+                const save = loadSave();
+                save.lastChapter = 2;
+                writeSave(save);
+                const next = this.firstIncompleteIn(save, DYNAMIC_LEVELS);
+                this.loadLevel(next === null ? DYNAMIC_LEVELS[0] : next);
+            },
+        }]);
+        this.btnC.active = true;
+        this.labelC.string = '← 返回标题';
+        this.actionC = () => this.showTitle();
+    }
+
+    private showTitle() {
+        const save = loadSave();
+        this.drawProgress();
+        this.playing = false;
+        const buttons: { label: string; action: () => void }[] = [{
+            label: '开始游戏',
+            action: () => {
+                this.hideOverlay();
+                const s = loadSave();
+                if (!s.tutorialsDone) {
                     this.loadLevel(0);
+                } else if (s.lastChapter === 1 || s.lastChapter === 2) {
+                    const list = s.lastChapter === 1 ? STATIC_LEVELS : DYNAMIC_LEVELS;
+                    const next = this.firstIncompleteIn(s, list);
+                    this.loadLevel(next === null ? list[0] : next);
+                } else {
+                    this.showChapterSelect();
                 }
             },
-        });
-        buttons.push({
+        }, {
             label: '从头开始',
             action: () => {
-                writeSave({ unlocked: 0, completed: [], bestCombo: 0 });
-                this.maxUnlocked = 0;
+                writeSave(defaultSave());
                 this.drawProgress();
                 this.hideOverlay();
                 this.loadLevel(0);
             },
-        });
-        this.showOverlay('泡泡纸', '认色 · 流动 · 限时 · 彩虹 · 空间 · 时空 · 蛇行 · 变色 · 大综合', buttons);
+        }];
+        this.showOverlay('泡泡纸', '必经教学 · 第一章（静态）· 第二章（动态）', buttons);
         // 测试期入口：选择关卡
         this.btnC.active = true;
         this.labelC.string = '选择关卡';
         this.actionC = () => this.showLevelSelect();
-    }
-
-    private firstIncomplete(save: SaveData): number {
-        for (let i = 0; i < LEVELS.length; i++) {
-            if (!save.completed.includes(i)) return i;
-        }
-        return 0;
     }
 
     // ---------------- 关卡加载 ----------------
@@ -1149,21 +1227,67 @@ export class GameManager extends Component {
         const cfg = LEVELS[this.currentLevel];
 
         const save = loadSave();
-        if (!save.completed.includes(this.currentLevel)) save.completed.push(this.currentLevel);
-        save.unlocked = Math.max(save.unlocked, Math.min(this.currentLevel + 1, LEVELS.length - 1));
         save.bestCombo = Math.max(save.bestCombo, this.combo);
+        const group = chapterGroupOf(this.currentLevel);
+        if (group === 'tutorial') {
+            if (this.currentLevel === 1) save.tutorialsDone = true;
+        } else if (group === 'ch1') {
+            if (!save.ch1.includes(this.currentLevel)) save.ch1.push(this.currentLevel);
+            save.lastChapter = 1;
+        } else {
+            if (!save.ch2.includes(this.currentLevel)) save.ch2.push(this.currentLevel);
+            save.lastChapter = 2;
+        }
         writeSave(save);
-        this.maxUnlocked = save.unlocked;
         this.drawProgress();
 
-        const isLast = this.currentLevel >= LEVELS.length - 1;
-        this.showOverlay(isLast ? '全部通关！' : '通关！', cfg.outro, [{
-            label: isLast ? '再玩一次' : '下一关',
-            action: () => {
-                this.hideOverlay();
-                this.loadLevel(isLast ? 0 : this.currentLevel + 1);
-            },
-        }]);
+        // 章节内顺序推进
+        if (group === 'tutorial') {
+            if (this.currentLevel === 0) {
+                this.showOverlay('通关！', cfg.outro, [{
+                    label: '下一节',
+                    action: () => { this.hideOverlay(); this.loadLevel(1); },
+                }]);
+            } else {
+                this.showOverlay('教学完成！', '欢迎进入泡泡世界。', [{
+                    label: '选择章节',
+                    action: () => { this.hideOverlay(); this.showChapterSelect(); },
+                }]);
+            }
+            return;
+        }
+        const list = group === 'ch1' ? STATIC_LEVELS : DYNAMIC_LEVELS;
+        const pos = list.indexOf(this.currentLevel);
+        if (pos >= 0 && pos < list.length - 1) {
+            this.showOverlay('通关！', cfg.outro, [{
+                label: '下一关',
+                action: () => { this.hideOverlay(); this.loadLevel(list[pos + 1]); },
+            }]);
+            return;
+        }
+        // 该章最后一关
+        const chapterName = group === 'ch1' ? '第一章 · 静态' : '第二章 · 动态';
+        if (group === 'ch1') {
+            this.showOverlay(`${chapterName} 通关！`, cfg.outro, [{
+                label: '进入第二章',
+                action: () => {
+                    this.hideOverlay();
+                    const s = loadSave();
+                    s.lastChapter = 2;
+                    writeSave(s);
+                    const next = this.firstIncompleteIn(s, DYNAMIC_LEVELS);
+                    this.loadLevel(next === null ? DYNAMIC_LEVELS[0] : next);
+                },
+            }, {
+                label: '再玩一次',
+                action: () => { this.hideOverlay(); this.loadLevel(this.currentLevel); },
+            }]);
+        } else {
+            this.showOverlay(`${chapterName} 通关！`, cfg.outro, [{
+                label: '再玩一次',
+                action: () => { this.hideOverlay(); this.loadLevel(this.currentLevel); },
+            }]);
+        }
     }
 
     private timeUp() {
@@ -1253,8 +1377,8 @@ export class GameManager extends Component {
         // 选关面板（测试阶段专用）：9 个章节快捷入口
         this.lvGrid = new Node('LevelGrid');
         this.lvGrid.layer = Layers.Enum.UI_2D;
-        this.lvGrid.addComponent(UITransform).setContentSize(460, 360);
-        this.lvGrid.setPosition(0, 60, 0);
+        this.lvGrid.addComponent(UITransform).setContentSize(520, 420);
+        this.lvGrid.setPosition(0, -100, 0);
         this.overlay.addChild(this.lvGrid);
         this.lvGrid.active = false;
 
@@ -1313,38 +1437,60 @@ export class GameManager extends Component {
     /** 测试阶段专用：选关面板 */
     private showLevelSelect() {
         this.overlayTitle.string = '选择关卡';
-        this.overlayDesc.string = '测试入口：可直接进入任意一节';
+        this.overlayDesc.string = '必经教学 → 第一章（静态）→ 第二章（动态）';
         this.btnA.active = false;
         this.btnB.active = false;
-        this.btnC.active = true;
-        this.labelC.string = '← 返回标题';
-        this.actionC = () => this.showTitle();
+        this.btnC.active = false;
         this.lvGrid.removeAllChildren();
-        const LEVEL_LABELS = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9'];
-        for (let i = 0; i < LEVELS.length; i++) {
-            const col = i % 3;
-            const row = Math.floor(i / 3);
-            const cell = new Node(`Lv${i}`);
-            cell.layer = Layers.Enum.UI_2D;
-            cell.addComponent(UITransform).setContentSize(132, 84);
-            cell.setPosition((col - 1) * 155, 120 - row * 105, 0);
-            const g = cell.addComponent(Graphics);
-            g.fillColor = new Color(242, 247, 252, 255);
-            g.roundRect(-66, -42, 132, 84, 14);
-            g.fill();
-            g.lineWidth = 2;
-            g.strokeColor = new Color(205, 220, 235, 255);
-            g.roundRect(-66, -42, 132, 84, 14);
-            g.stroke();
-            cell.addComponent(Button).transition = Button.Transition.COLOR;
-            const label = this.makeLabelOn(cell, LEVEL_LABELS[i], 30, new Color(90, 120, 150, 255), new Vec3(0, 0, 0));
-            label.node.name = 'Label';
-            cell.on(Button.EventType.CLICK, () => {
-                this.hideOverlay();
-                this.loadLevel(i);
-            }, this);
-            this.lvGrid.addChild(cell);
-        }
+        const heading = (text: string, y: number) => {
+            const h = this.makeLabelOn(this.lvGrid, text, 22, new Color(120, 140, 160, 255), new Vec3(0, y, 0));
+            h.node.getComponent(UITransform)!.setContentSize(520, 30);
+            return h;
+        };
+        const addCells = (indexes: number[], y: number, width: number) => {
+            const step = Math.min(220, 150 * indexes.length - 40);
+            const x0 = -((indexes.length - 1) * step) / 2;
+            indexes.forEach((i, k) => {
+                const cell = new Node(`Lv${i}`);
+                cell.layer = Layers.Enum.UI_2D;
+                cell.addComponent(UITransform).setContentSize(width, 74);
+                cell.setPosition(x0 + k * step, y, 0);
+                const g = cell.addComponent(Graphics);
+                g.fillColor = new Color(242, 247, 252, 255);
+                g.roundRect(-width / 2, -37, width, 74, 14);
+                g.fill();
+                g.lineWidth = 2;
+                g.strokeColor = new Color(205, 220, 235, 255);
+                g.roundRect(-width / 2, -37, width, 74, 14);
+                g.stroke();
+                cell.addComponent(Button).transition = Button.Transition.COLOR;
+                this.makeLabelOn(cell, LEVELS[i].num, 24, new Color(90, 120, 150, 255), new Vec3(0, 0, 0));
+                cell.on(Button.EventType.CLICK, () => {
+                    this.hideOverlay();
+                    this.loadLevel(i);
+                }, this);
+                this.lvGrid.addChild(cell);
+            });
+        };
+        heading('必经教学', 158);
+        addCells(TUTORIAL_LEVELS, 205, 130);
+        heading('第一章 · 静态（原位刷新）', 96);
+        addCells(STATIC_LEVELS, 34, 130);
+        heading('第二章 · 动态（重力补位）', -76);
+        addCells(DYNAMIC_LEVELS, -138, 116);
+        // 底部返回按钮
+        const back = new Node('Back');
+        back.layer = Layers.Enum.UI_2D;
+        back.addComponent(UITransform).setContentSize(200, 60);
+        back.setPosition(0, -205, 0);
+        const bg = back.addComponent(Graphics);
+        bg.fillColor = new Color(230, 238, 246, 255);
+        bg.roundRect(-100, -30, 200, 60, 14);
+        bg.fill();
+        back.addComponent(Button).transition = Button.Transition.COLOR;
+        this.makeLabelOn(back, '← 返回标题', 22, new Color(110, 130, 150, 255), new Vec3(0, 0, 0));
+        back.on(Button.EventType.CLICK, () => { this.hideOverlay(); this.showTitle(); }, this);
+        this.lvGrid.addChild(back);
         this.lvGrid.active = true;
         this.overlay.active = true;
     }
@@ -1352,12 +1498,13 @@ export class GameManager extends Component {
     private drawProgress() {
         if (!this.progressG) return;
         this.progressG.clear();
-        const spacing = LEVELS.length >= 7 ? 42 : LEVELS.length >= 5 ? 60 : 72;
+        const save = loadSave();
+        const spacing = 42;
         const x0 = -((LEVELS.length - 1) * spacing) / 2;
         for (let i = 0; i < LEVELS.length; i++) {
             const x = x0 + i * spacing;
-            this.progressG.fillColor = i <= this.maxUnlocked
-                ? new Color(255, 150, 180, 255)
+            this.progressG.fillColor = this.isLevelDone(save, i)
+                ? new Color(150, 200, 255, 255)   // 已完成
                 : new Color(214, 224, 234, 255);
             this.progressG.circle(x, 0, 11);
             this.progressG.fill();
