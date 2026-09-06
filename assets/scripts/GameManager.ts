@@ -316,6 +316,9 @@ export class GameManager extends Component {
                 if (!err && sf) BUBBLE_FRAMES[k] = sf;
             });
         });
+        resources.load('bubbles/bubble_rainbow/spriteFrame', SpriteFrame, (err, sf) => {
+            if (!err && sf) BUBBLE_FRAMES['rainbow'] = sf;
+        });
         // 保险：首次 preload 若失败，强制重载，保证声音可播
         this.scheduleOnce(() => {
             const clip = this.popAudio.clip;
@@ -677,12 +680,11 @@ export class GameManager extends Component {
         }
     }
 
-    /** S 型路径：第 0 列自上而下，第 1 列自下而上，依次交替 */
+    /** 逐列路径：始终从左往右、列内自上而下（新泡泡从最左列进入） */
     private makeSnakeCells(cfg: LevelConfig): { r: number; c: number }[] {
         const list: { r: number; c: number }[] = [];
         for (let c = 0; c < cfg.gridCols; c++) {
-            for (let k = 0; k < cfg.gridRows; k++) {
-                const r = (c % 2 === 0) ? k : (cfg.gridRows - 1 - k);
+            for (let r = 0; r < cfg.gridRows; r++) {
                 if (this.shapeOK(cfg, r, c)) list.push({ r, c });
             }
         }
@@ -703,7 +705,7 @@ export class GameManager extends Component {
             this.scheduleOnce(() => {
                 try { this.runSnakeBatch(); }
                 catch (e) { console.error('[BubbleWrap] snake batch err', e); this.snakeBusy = false; }
-            }, 0.18);
+            }, 0.08);
         }
     }
 
@@ -722,7 +724,7 @@ export class GameManager extends Component {
             const c = b.getComponent(Bubble);
             return !!c && !c.isPopped && (b as any).__pi !== undefined;
         }).sort((a, b) => ((a as any).__pi as number) - ((b as any).__pi as number));
-        const stepDelay = 0.022;
+        const stepDelay = 0.012;
         let lastDelay = 0;
         live.forEach((nd, idx) => {
             const newPi = k + idx;
@@ -733,7 +735,7 @@ export class GameManager extends Component {
             lastDelay = Math.max(lastDelay, delay);
             this.scheduleOnce(() => {
                 if (nd.isValid) {
-                    tween(nd).to(0.16, { position: targetPos }, { easing: 'quadIn' }).start();
+                    tween(nd).to(0.12, { position: targetPos }, { easing: 'quadIn' }).start();
                 }
             }, delay);
         });
@@ -747,13 +749,13 @@ export class GameManager extends Component {
             this.bubbleList.push(nb);
             (nb as any).__pi = j;
             nb.setScale(0.05, 0.05, 1);
-            const delay = j * 0.05;
+            const delay = j * 0.03;
             lastDelay = Math.max(lastDelay, delay);
             this.scheduleOnce(() => {
                 if (!nb.isValid) return;
                 tween(nb).parallel(
-                    tween().to(0.18, { position: target }, { easing: 'quadOut' }),
-                    tween().to(0.18, { scale: new Vec3(0.95, 0.95, 1) }, { easing: 'quadOut' }),
+                    tween().to(0.14, { position: target }, { easing: 'quadOut' }),
+                    tween().to(0.14, { scale: new Vec3(0.95, 0.95, 1) }, { easing: 'quadOut' }),
                 ).start();
             }, delay);
         }
@@ -776,7 +778,7 @@ export class GameManager extends Component {
                 console.error('[BubbleWrap] snake tail err', e);
                 this.snakeBusy = false;
             }
-        }, lastDelay + 0.35);
+        }, lastDelay + 0.25);
     }
 
     private hasLiveColor(key: string): boolean {

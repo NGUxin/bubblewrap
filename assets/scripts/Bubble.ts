@@ -61,7 +61,7 @@ export class Bubble extends Component {
         }
     }
 
-    /** 设置为彩虹泡泡：颜色循环流动，可匹配任意目标色 */
+    /** 彩虹泡泡：静态多彩彩虹纹理（固定不变），可匹配任意目标色 */
     setRainbow() {
         this.stopChanging();
         this.clearRainbowRing();
@@ -71,10 +71,15 @@ export class Bubble extends Component {
         const sp = this.getComponent(Sprite)!;
         this.sprite = sp;
         tween(this.sprite).stop();
-        // 彩虹固定为暖白膜面 + 淡紫标识环：不再循环变色，避免与变色泡泡混淆
-        if (this.baseFrame) sp.spriteFrame = this.baseFrame;
-        sp.color = new Color(255, 247, 238, 255);
-        this.ensureRainbowRing();
+        // 使用静态彩虹纹理；若纹理尚未加载完成则先用基座纹理+暖白兜底
+        const frame = BUBBLE_FRAMES['rainbow'];
+        if (frame) {
+            sp.spriteFrame = frame;
+            sp.color = Color.WHITE;
+        } else if (this.baseFrame) {
+            sp.spriteFrame = this.baseFrame;
+            sp.color = new Color(255, 247, 238, 255);
+        }
     }
 
     /** 变色泡泡：红→橙→黄→绿→青→蓝→紫 循环，当前颜色 = 目标色时才可击破 */
