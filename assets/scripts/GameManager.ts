@@ -182,6 +182,7 @@ export class GameManager extends Component {
     private timerLeft = 0;
     private playing = false;
     private chgAcc = 0;
+    private errLog: string[] = [];
 
     // 失败机制：本关累计捏错次数
     private mistakes = 0;
@@ -245,8 +246,19 @@ export class GameManager extends Component {
         this.buildHud();
         this.loadAllAudio();
         this.showTitle();
-        // 全局错误兜底：单次异常不导致整个游戏重启（抖音运行时偶发）
+        // 全局错误记录（配合 console / tt.onError 定位重启问题）
         const g = globalThis as any;
+        try {
+            const rec = (msg: string) => {
+                if (this.errLog.length < 20) this.errLog.push(msg);
+                console.error('[BubbleWrap]', msg);
+            };
+            (g as any).__bubblewrapErrors = this.errLog;
+            if (typeof g.addEventListener === 'function') {
+                g.addEventListener('error', (e: any) => rec(`window: ${e && e.message}`));
+            }
+        } catch { /* ignore */ }
+        // 全局错误兜底：单次异常不导致整个游戏重启（抖音运行时偶发）
         if (g.tt && g.tt.onError) {
             try { g.tt.onError((e: any) => console.error('[BubbleWrap] tt error:', e && e.errMsg)); } catch { /* ignore */ }
         }
@@ -426,6 +438,7 @@ export class GameManager extends Component {
                 Object.entries(this.clips).map(([k, v]) => [k, !!v]),
             ),
             lastClip: () => (this.popAudio.clip ? this.popAudio.clip.name : ''),
+            errors: () => this.errLog.slice(),
             bubbles: () => this.bubbleList.filter((b) => b.isValid).map((b) => {
                 const c = b.getComponent(Bubble);
                 return { x: b.position.x, y: b.position.y, color: c ? c.color : '', rainbow: c ? c.rainbow : false, changing: c ? c.changing : false, popped: c ? c.isPopped : true };
@@ -687,7 +700,10 @@ export class GameManager extends Component {
         this.snakeDirty.push(node);
         if (!this.snakeBusy) {
             this.snakeBusy = true;
-            this.scheduleOnce(() => this.runSnakeBatch(), 0.18);
+            this.scheduleOnce(() => {
+                try { this.runSnakeBatch(); }
+                catch (e) { console.error('[BubbleWrap] snake batch err', e); this.snakeBusy = false; }
+            }, 0.18);
         }
     }
 
@@ -753,8 +769,13 @@ export class GameManager extends Component {
             }, lastDelay + 0.1);
         }
         this.scheduleOnce(() => {
-            if (this.snakeDirty.length > 0) this.runSnakeBatch();
-            else this.snakeBusy = false;
+            try {
+                if (this.snakeDirty.length > 0) this.runSnakeBatch();
+                else this.snakeBusy = false;
+            } catch (e) {
+                console.error('[BubbleWrap] snake tail err', e);
+                this.snakeBusy = false;
+            }
         }, lastDelay + 0.35);
     }
 
@@ -922,8 +943,12 @@ export class GameManager extends Component {
             // 刷新（关键：先补位，粒子异常不能阻塞补位）
             if (cfg.gravity) {
                 this.scheduleOnce(() => {
-                    if (cfg.snake) this.snakeRefill(node);
-                    else this.gravityRefill(node);
+                    try {
+                        if (cfg.snake) this.snakeRefill(node);
+                        else this.gravityRefill(node);
+                    } catch (e) {
+                        console.error('[BubbleWrap] refill err', e);
+                    }
                 }, 0.15);
             } else if (cfg.dynamic) {
                 this.respawnBubble(node);
