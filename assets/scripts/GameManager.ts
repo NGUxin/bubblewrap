@@ -35,12 +35,12 @@ const COLOR_GRAY = new Color(145, 165, 185, 255);
 const COLOR_WARN = new Color(232, 84, 84, 255);
 const COLOR_PURPLE = new Color(190, 120, 255, 255);
 
-// 必经教学(2) → 第一章·静态(原位刷新:限时→5色→彩虹) / 第二章·动态(重力:重力→限时→5色→彩虹)
+// 教学章(2) → 第一章·静态(原位刷新:限时→5色→彩虹) / 第二章·动态(重力:重力→限时→5色→彩虹)
 const PALETTE3 = ['red', 'yellow', 'blue'];
 const PALETTE5 = ['red', 'yellow', 'blue', 'green', 'violet'];
 const LEVELS: LevelConfig[] = [
     {
-        num: '1-1', theme: '认色', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
+        num: '教学1', theme: '认色', keywords: '红黄蓝 · 静态棋盘 · 颜色队列',
         narrative: '在整齐的泡泡纸中，寻找指定颜色。',
         outro: '棋盘开始变化——新的泡泡会不断补上。',
         gridCols: 3, gridRows: 4, shape: 'rect', colors: PALETTE3,
@@ -48,7 +48,7 @@ const LEVELS: LevelConfig[] = [
         timeLimit: 0, timeBonus: 0, targetCount: 12,
     },
     {
-        num: '1-2', theme: '流动', keywords: '动态刷新 · 红黄蓝 · 持续寻找',
+        num: '教学2', theme: '流动', keywords: '动态刷新 · 红黄蓝 · 持续寻找',
         narrative: '每捏破一个，就会有新的泡泡补上。',
         outro: '泡泡在流动了——现在，时间开始计时。',
         gridCols: 4, gridRows: 5, shape: 'rect', colors: PALETTE3,
@@ -56,15 +56,15 @@ const LEVELS: LevelConfig[] = [
         timeLimit: 0, timeBonus: 0, targetCount: 20,
     },
     {
-        num: '1-3', theme: '限时', keywords: '倒计时 · 原位动态刷新',
-        narrative: '在有限时间里，尽可能完成颜色队列。（第一章 · 静态）',
+        num: '1-1', theme: '限时', keywords: '倒计时 · 原位动态刷新',
+        narrative: '在有限时间里，尽可能完成颜色队列。（第一章）',
         outro: '颜色变多了——注意分辨五色泡泡。',
         gridCols: 5, gridRows: 6, shape: 'rect', colors: PALETTE3,
         dynamic: true, gravity: false, rainbow: false, changing: false,
         timeLimit: 45, timeBonus: 0.8, targetCount: 30,
     },
     {
-        num: '1-4', theme: '五彩', keywords: '倒计时 · 原位刷新 · 五色',
+        num: '1-2', theme: '五彩', keywords: '倒计时 · 原位刷新 · 五色',
         narrative: '颜色增至五种，难度升级。',
         outro: '彩虹泡泡加入了战场。',
         gridCols: 6, gridRows: 7, shape: 'rect', colors: PALETTE5,
@@ -72,7 +72,7 @@ const LEVELS: LevelConfig[] = [
         timeLimit: 50, timeBonus: 0.8, targetCount: 42,
     },
     {
-        num: '1-5', theme: '彩虹', keywords: '倒计时 · 原位刷新 · 五色 · 彩虹泡泡',
+        num: '1-3', theme: '彩虹', keywords: '倒计时 · 原位刷新 · 五色 · 彩虹泡泡',
         narrative: '彩虹泡泡能匹配任意颜色，助你完成限时挑战。',
         outro: '第一章通关！准备进入动态世界。',
         gridCols: 6, gridRows: 7, shape: 'rect', colors: PALETTE5,
@@ -81,7 +81,7 @@ const LEVELS: LevelConfig[] = [
     },
     {
         num: '2-1', theme: '重力', keywords: '重力补位 · 泡泡下落',
-        narrative: '捏破后上方泡泡下落补位，棋盘持续变化。（第二章 · 动态）',
+        narrative: '捏破后上方泡泡下落补位，棋盘持续变化。（第二章）',
         outro: '时间也开始追赶了。',
         gridCols: 5, gridRows: 6, shape: 'rect', colors: PALETTE3,
         dynamic: false, gravity: true, rainbow: false, changing: false,
@@ -113,7 +113,7 @@ const LEVELS: LevelConfig[] = [
     },
 ];
 
-// 关卡分组：0/1 必经教学；2~4 第一章（静态·原位刷新）；5~8 第二章（动态·重力）
+// 关卡分组：0/1 教学章；2~4 第一章（静态·原位刷新）；5~8 第二章（动态·重力）
 const TUTORIAL_LEVELS = [0, 1];
 const STATIC_LEVELS = [2, 3, 4];
 const DYNAMIC_LEVELS = [5, 6, 7, 8];
@@ -122,7 +122,7 @@ const DYNAMIC_LEVELS = [5, 6, 7, 8];
 
 interface SaveData {
     version: number;
-    tutorialsDone: boolean;   // 两节必经教学是否完成
+    tutorialsDone: boolean;   // 两节教学章是否完成
     ch1: number[];            // 第一章（静态）已通关的全局关卡序号
     ch2: number[];            // 第二章（动态）已通关的全局关卡序号
     bestCombo: number;
@@ -271,6 +271,9 @@ export class GameManager extends Component {
     private btnC: Node = null!;
     private labelC: Label = null!;
     private lvGrid: Node = null!;
+    // 左上角关卡内按钮（重新开始 / 返回主菜单）
+    private restartBtn: Node = null!;
+    private homeBtn: Node = null!;
     private actionA: (() => void) | null = null;
     private actionB: (() => void) | null = null;
     private actionC: (() => void) | null = null;
@@ -461,7 +464,7 @@ export class GameManager extends Component {
                 this.loadLevel(0);
             },
         }];
-        this.showOverlay('泡泡纸', '必经教学 · 第一章（静态）· 第二章（动态）', buttons);
+        this.showOverlay('泡泡纸', '教学章 · 第一章（静态）· 第二章（动态）', buttons);
         // 测试期入口：选择关卡
         this.btnC.active = true;
         this.labelC.string = '选择关卡';
@@ -536,8 +539,8 @@ export class GameManager extends Component {
         // 开场主题卡：衔接上一关
         this.showOverlay(`${cfg.num} · ${cfg.theme}`, `${cfg.keywords}\n${cfg.narrative}`, []);
         this.scheduleOnce(() => {
-            this.hideOverlay();
             this.playing = true;
+            this.hideOverlay();
         }, 1.6);
     }
 
@@ -1251,7 +1254,7 @@ export class GameManager extends Component {
             return;
         }
         // 该章最后一关
-        const chapterName = group === 'ch1' ? '第一章 · 静态' : '第二章 · 动态';
+        const chapterName = group === 'ch1' ? '第一章' : '第二章';
         if (group === 'ch1') {
             this.showOverlay(`${chapterName} 通关！`, cfg.outro, [{
                 label: '进入第二章',
@@ -1294,10 +1297,10 @@ export class GameManager extends Component {
         const gray = new Color(145, 165, 185, 255);
 
         // 左上：关卡名；右上：计时；中央：当前目标
-        this.titleLabel = this.makeLabel('', 27, dark, new Vec3(-220, 605, 0));
+        this.titleLabel = this.makeLabel('', 27, dark, new Vec3(-220, 590, 0));
         this.titleLabel.node.getComponent(UITransform)!.setContentSize(360, 40);
         this.titleLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
-        this.subtitleLabel = this.makeLabel('', 20, gray, new Vec3(-220, 575, 0));
+        this.subtitleLabel = this.makeLabel('', 20, gray, new Vec3(-220, 562, 0));
         this.subtitleLabel.node.getComponent(UITransform)!.setContentSize(360, 30);
         this.subtitleLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
         this.subtitleLabel.fontSize = 18;
@@ -1324,7 +1327,57 @@ export class GameManager extends Component {
         this.node.addChild(this.targetBar);
         this.targetStrip = this.targetBar;
 
+        // 左上角关卡内按钮：重新开始 + 返回主菜单（仅游戏进行中显示）
+        this.restartBtn = this.buildCornerButton('重新开始', new Vec3(-280, 625, 0));
+        this.restartBtn.on(Button.EventType.CLICK, () => {
+            if (!this.restartBtn.active) return;
+            this.loadLevel(this.currentLevel);
+        }, this);
+        this.homeBtn = this.buildCornerButton('返回主菜单', new Vec3(-140, 625, 0));
+        this.homeBtn.on(Button.EventType.CLICK, () => {
+            if (!this.homeBtn.active) return;
+            this.showTitle();
+        }, this);
+        // 初始隐藏（标题屏时由 showOverlay 统一管理）
+        this.restartBtn.active = false;
+        this.homeBtn.active = false;
+
         this.buildOverlay();
+    }
+
+    /** 左上角小按钮：圆角半透明背景 + 居中文字 */
+    private buildCornerButton(text: string, pos: Vec3): Node {
+        const node = new Node('CornerBtn');
+        node.layer = Layers.Enum.UI_2D;
+        const w = 110, h = 30;
+        node.addComponent(UITransform).setContentSize(w, h);
+        node.setPosition(pos);
+        this.node.addChild(node);
+        const g = node.addComponent(Graphics);
+        g.fillColor = new Color(230, 238, 246, 220);
+        g.roundRect(-w / 2, -h / 2, w, h, 8);
+        g.fill();
+        g.lineWidth = 1.5;
+        g.strokeColor = new Color(205, 220, 235, 255);
+        g.roundRect(-w / 2, -h / 2, w, h, 8);
+        g.stroke();
+        const btn = node.addComponent(Button);
+        btn.transition = Button.Transition.COLOR;
+        btn.normalColor = new Color(255, 255, 255, 255);
+        btn.pressedColor = new Color(200, 220, 240, 255);
+        const lbl = new Node('Label');
+        lbl.layer = Layers.Enum.UI_2D;
+        lbl.addComponent(UITransform).setContentSize(w, h);
+        lbl.setPosition(0, 0, 0);
+        node.addChild(lbl);
+        const label = lbl.addComponent(Label);
+        label.string = text;
+        label.fontSize = 16;
+        label.lineHeight = 16;
+        label.color = new Color(90, 120, 150, 255);
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        return node;
     }
 
     private buildOverlay() {
@@ -1393,6 +1446,9 @@ export class GameManager extends Component {
     private showOverlay(title: string, desc: string, buttons: { label: string; action: () => void }[]) {
         this.overlayTitle.string = title;
         this.overlayDesc.string = desc;
+        // 遮罩显示时隐藏关卡内按钮
+        this.restartBtn.active = false;
+        this.homeBtn.active = false;
         this.btnA.active = buttons.length > 0;
         this.btnB.active = buttons.length > 1;
         this.labelA.string = buttons[0] ? buttons[0].label : '';
@@ -1406,6 +1462,11 @@ export class GameManager extends Component {
 
     private hideOverlay() {
         this.overlay.active = false;
+        // 遮罩隐藏时恢复关卡内按钮（仅在游戏进行中）
+        if (this.playing) {
+            this.restartBtn.active = true;
+            this.homeBtn.active = true;
+        }
         this.actionA = null;
         this.actionB = null;
         this.actionC = null;
@@ -1416,7 +1477,9 @@ export class GameManager extends Component {
     /** 测试阶段专用：选关面板 */
     private showLevelSelect() {
         this.overlayTitle.string = '选择关卡';
-        this.overlayDesc.string = '必经教学 → 第一章（静态）→ 第二章（动态）';
+        this.overlayDesc.string = '教学章 → 第一章（静态）→ 第二章（动态）';
+        this.restartBtn.active = false;
+        this.homeBtn.active = false;
         this.btnA.active = false;
         this.btnB.active = false;
         this.btnC.active = false;
@@ -1451,11 +1514,11 @@ export class GameManager extends Component {
                 this.lvGrid.addChild(cell);
             });
         };
-        heading('必经教学', 158);
+        heading('教学章', 158);
         addCells(TUTORIAL_LEVELS, 205, 130);
-        heading('第一章 · 静态（原位刷新）', 96);
+        heading('第一章', 96);
         addCells(STATIC_LEVELS, 34, 130);
-        heading('第二章 · 动态（重力补位）', -76);
+        heading('第二章', -76);
         addCells(DYNAMIC_LEVELS, -138, 116);
         // 底部返回按钮
         const back = new Node('Back');
