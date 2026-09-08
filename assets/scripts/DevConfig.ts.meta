@@ -1,0 +1,13 @@
+{
+  "ver": "4.0.24",
+  "importer": "typescript",
+  "imported": true,
+  "uuid": "57c62c9a-8f61-4c3a-b9f6-1c21c4a0bd2e",
+  "files": [],
+  "subMetas": {},
+  "userData": {
+    "moduleId": "project:///assets/scripts/DevConfig.js",
+    "importerSettings": 7,
+    "simulateGlobals": []
+  }
+}

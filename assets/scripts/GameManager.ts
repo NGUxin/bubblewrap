@@ -5,6 +5,7 @@ import {
 } from 'cc';
 import { Bubble } from './Bubble';
 import { COLORS, RAINBOW_AUDIO, BUBBLE_FRAMES } from './ColorDefs';
+import { IS_DEV } from './DevConfig';
 const { ccclass, property } = _decorator;
 
 interface LevelConfig {
@@ -245,6 +246,7 @@ export class GameManager extends Component {
     private targetBar: Node = null!;
     private targetStrip: Node = null!;
     private targetSlots: Node[] = [];
+    private targetHint: Label = null!;
     private slotStep = 40;
 
     // 音频
@@ -271,6 +273,7 @@ export class GameManager extends Component {
     private btnC: Node = null!;
     private labelC: Label = null!;
     private lvGrid: Node = null!;
+    private hudNodes: Node[] = [];
     // 左上角关卡内按钮（重新开始 / 返回主菜单）
     private restartBtn: Node = null!;
     private homeBtn: Node = null!;
@@ -311,25 +314,47 @@ export class GameManager extends Component {
     }
 
     update(dt: number) {
-        if (this.playing && this.timerLeft > 0) {
-            this.timerLeft -= dt;
-            if (this.timerLeft <= 0) {
-                this.timerLeft = 0;
-                this.timeUp();
+        try {
+            if (this.playing && this.timerLeft > 0) {
+                this.timerLeft -= dt;
+                if (this.timerLeft <= 0) {
+                    this.timerLeft = 0;
+                    this.timeUp();
+                }
+                this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
             }
-            this.timerLabel.string = `时间 ${Math.ceil(this.timerLeft)}`;
-        }
-        // 变色泡泡颜色循环（统一由本组件驱动，避免节点未激活导致调度丢失）
-        if (this.playing) {
-            this.chgAcc += dt;
-            if (this.chgAcc >= 1.2) {
-                this.chgAcc = 0;
-                for (const b of this.bubbleList) {
-                    if (!b.isValid) continue;
-                    const c = b.getComponent(Bubble);
-                    if (c && c.changing && !c.isPopped) c.cycleNext();
+            // 变色泡泡颜色循环（统一由本组件驱动，避免节点未激活导致调度丢失）
+            if (this.playing) {
+                this.chgAcc += dt;
+                if (this.chgAcc >= 1.2) {
+                    this.chgAcc = 0;
+                    for (const b of this.bubbleList) {
+                        if (!b.isValid) continue;
+                        const c = b.getComponent(Bubble);
+                        if (c && c.changing && !c.isPopped) c.cycleNext();
+                    }
                 }
             }
+            // 原位刷新兜底：若某格已击破超 0.45s 仍未补位（调度丢失/异常），直接复位
+            if (this.playing) {
+                const cfg = LEVELS[this.currentLevel];
+                if (cfg && cfg.dynamic && !cfg.gravity) {
+                    const now = Date.now();
+                    for (const b of this.bubbleList) {
+                        if (!b.isValid) continue;
+                        const c = b.getComponent(Bubble);
+                        const t = (b as any).__popT as number | undefined;
+                        if (c && c.isPopped && t && now - t > 450) {
+                            c.resetBubble();
+                            c.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+                            this.ensureTargetColorAvailable();
+                            (b as any).__popT = 0;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[BubbleWrap] update err', e);
         }
     }
 
@@ -418,7 +443,7 @@ export class GameManager extends Component {
                 save.lastChapter = 1;
                 writeSave(save);
                 const next = this.firstIncompleteIn(save, STATIC_LEVELS);
-                this.loadLevel(next === null ? STATIC_LEVELS[0] : next);
+                this.gotoLevel(next === null ? STATIC_LEVELS[0] : next);
             },
         }, {
             label: '第二章（动态）',
@@ -428,11 +453,11 @@ export class GameManager extends Component {
                 save.lastChapter = 2;
                 writeSave(save);
                 const next = this.firstIncompleteIn(save, DYNAMIC_LEVELS);
-                this.loadLevel(next === null ? DYNAMIC_LEVELS[0] : next);
+                this.gotoLevel(next === null ? DYNAMIC_LEVELS[0] : next);
             },
         }]);
         this.btnC.active = true;
-        this.labelC.string = '← 返回标题';
+        this.labelC.string = '返回主界面';
         this.actionC = () => this.showTitle();
     }
 
@@ -446,11 +471,11 @@ export class GameManager extends Component {
                 this.hideOverlay();
                 const s = loadSave();
                 if (!s.tutorialsDone) {
-                    this.loadLevel(0);
+                    this.gotoLevel(0);
                 } else if (s.lastChapter === 1 || s.lastChapter === 2) {
                     const list = s.lastChapter === 1 ? STATIC_LEVELS : DYNAMIC_LEVELS;
                     const next = this.firstIncompleteIn(s, list);
-                    this.loadLevel(next === null ? list[0] : next);
+                    this.gotoLevel(next === null ? list[0] : next);
                 } else {
                     this.showChapterSelect();
                 }
@@ -461,19 +486,57 @@ export class GameManager extends Component {
                 writeSave(defaultSave());
                 this.drawProgress();
                 this.hideOverlay();
-                this.loadLevel(0);
+                this.gotoLevel(0);
             },
         }];
         this.showOverlay('泡泡纸', '教学章 · 第一章（静态）· 第二章（动态）', buttons);
-        // 测试期入口：选择关卡
-        this.btnC.active = true;
-        this.labelC.string = '选择关卡';
-        this.actionC = () => this.showLevelSelect();
+        // 开发版：完整“选择关卡”；发布版：仅通关教学后开放“选择章节”
+        if (IS_DEV) {
+            this.btnC.active = true;
+            this.labelC.string = '选择关卡';
+            this.actionC = () => this.showLevelSelect();
+        } else if (save.tutorialsDone) {
+            this.btnC.active = true;
+            this.labelC.string = '选择章节';
+            this.actionC = () => this.showChapterSelect();
+        } else {
+            this.btnC.active = false;
+        }
+    }
+
+    /** 玩家正式流程可达性：教学顺序推进；章节内必须打通上一关（章节首关随选择进入） */
+    private canAccessInPlayerFlow(index: number, save: SaveData): boolean {
+        if (index <= 1) return !save.tutorialsDone;
+        if (!save.tutorialsDone) return false;
+        const isCh1 = index <= 4;
+        const list = isCh1 ? STATIC_LEVELS : DYNAMIC_LEVELS;
+        const arr = isCh1 ? save.ch1 : save.ch2;
+        const pos = list.indexOf(index);
+        if (pos <= 0) return true;
+        return arr.includes(list[pos - 1]);
+    }
+
+    /** 关卡加载统一入口：任何加载期异常都被兜住，不导致运行时重启 */
+    private gotoLevel(index: number) {
+        try {
+            this.loadLevel(index);
+        } catch (e) {
+            console.error('[BubbleWrap] gotoLevel err', index, e);
+            try {
+                this.showTitle();
+            } catch { /* ignore */ }
+        }
     }
 
     // ---------------- 关卡加载 ----------------
 
     loadLevel(index: number) {
+        const gSave = loadSave();
+        // 发布模式只允许玩家流程可达的关卡；开发模式放行任意跳关
+        if (!IS_DEV && !this.canAccessInPlayerFlow(index, gSave)) {
+            console.warn('[BubbleWrap] 非开发模式不可直达该关卡', index);
+            return;
+        }
         this.currentLevel = index;
         const cfg = LEVELS[index];
         this.clearBubbles();
@@ -519,8 +582,8 @@ export class GameManager extends Component {
         this.unschedule(this.relocateChangingBubbles);
         if (cfg.changing) this.schedule(this.relocateChangingBubbles, CHANGING_MOVE_INTERVAL);
 
-        // 调试钩子（供自动化验证 / 真机检查）
-        (globalThis as any).__bubblewrap = {
+        // 调试钩子（仅开发/调试构建暴露；正式发布不挂载）
+        if (IS_DEV) (globalThis as any).__bubblewrap = {
             gm: this,
             level: this.currentLevel,
             target: () => this.queue[this.queueIdx],
@@ -546,7 +609,7 @@ export class GameManager extends Component {
 
     /** 重置 = 重新开始当前关卡（场景里按钮绑定此方法） */
     resetAllBubble() {
-        this.loadLevel(this.currentLevel);
+        this.gotoLevel(this.currentLevel);
     }
 
     private clearBubbles() {
@@ -720,6 +783,20 @@ export class GameManager extends Component {
                 console.error('[BubbleWrap] respawn err', e);
             }
         }, 0.16);
+        // 双保险：若 0.7s 后该格仍处于击破态（异常/调度丢失），强制补位
+        this.scheduleOnce(() => {
+            try {
+                if (!node.isValid) return;
+                const b = node.getComponent(Bubble);
+                if (b && b.isPopped) {
+                    b.resetBubble();
+                    b.setColor(cfg.colors[randomRangeInt(0, cfg.colors.length)]);
+                    this.ensureTargetColorAvailable();
+                }
+            } catch (e) {
+                console.error('[BubbleWrap] respawn guard err', e);
+            }
+        }, 0.7);
     }
 
     /** 重力补位：销毁被击破泡泡，同列上方泡泡下落，顶部补入新泡泡 */
@@ -992,12 +1069,16 @@ export class GameManager extends Component {
     }
 
     private advanceQueue() {
-        this.queueIdx++;
-        const cfg = LEVELS[this.currentLevel];
-        this.remainLabel.string = `剩余 ${Math.max(cfg.targetCount - this.queueIdx, 0)}`;
-        this.highlightCurrent();
-        // 目标推进后，新目标色可能已被吃光——立即补上
-        this.ensureTargetColorAvailable();
+        try {
+            this.queueIdx++;
+            const cfg = LEVELS[this.currentLevel];
+            this.remainLabel.string = `剩余 ${Math.max(cfg.targetCount - this.queueIdx, 0)}`;
+            this.highlightCurrent();
+            // 目标推进后，新目标色可能已被吃光——立即补上
+            this.ensureTargetColorAvailable();
+        } catch (e) {
+            console.error('[BubbleWrap] advance err', e);
+        }
     }
 
     // ---------------- 交互 ----------------
@@ -1088,6 +1169,7 @@ export class GameManager extends Component {
                     }
                 }, 0.15);
             } else if (cfg.dynamic) {
+                (node as any).__popT = Date.now();
                 this.respawnBubble(node);
             }
 
@@ -1135,28 +1217,33 @@ export class GameManager extends Component {
 
     /** 捏错统一入口：累计失误、刷新 HUD，达到上限即失败（关卡加载时清零） */
     private registerWrong() {
-        if (!this.playing) return;
-        this.mistakes++;
-        this.missLabel.string = `失误 ${this.mistakes}/${MISTAKE_LIMIT}`;
-        this.missLabel.color = this.mistakes >= 3 ? COLOR_WARN : COLOR_GRAY;
-        // 「连续」正确被打断，彩虹蓄力清零
-        this.rainbowStreak = 0;
-        this.updateRainbowHint();
-        if (this.mistakes >= MISTAKE_LIMIT) {
-            this.failLevel();
+        try {
+            if (!this.playing) return;
+            this.mistakes++;
+            this.missLabel.string = `失误 ${this.mistakes}/${MISTAKE_LIMIT}`;
+            this.missLabel.color = this.mistakes >= 3 ? COLOR_WARN : COLOR_GRAY;
+            this.rainbowStreak = 0;
+            this.updateRainbowHint();
+            if (this.mistakes >= MISTAKE_LIMIT) this.failLevel();
+        } catch (e) {
+            console.error('[BubbleWrap] wrong err', e);
         }
     }
 
     private failLevel() {
-        if (!this.playing) return;
-        this.playing = false;
-        this.showOverlay('挑战失败', `累计捏错 ${MISTAKE_LIMIT} 次，再试一次！`, [{
-            label: '重新挑战',
-            action: () => {
-                this.hideOverlay();
-                this.loadLevel(this.currentLevel);
-            },
-        }]);
+        try {
+            if (!this.playing) return;
+            this.playing = false;
+            this.showOverlay('挑战失败', `累计捏错 ${MISTAKE_LIMIT} 次，再试一次！`, [{
+                label: '重新挑战',
+                action: () => {
+                    this.hideOverlay();
+                    this.gotoLevel(this.currentLevel);
+                },
+            }]);
+        } catch (e) {
+            console.error('[BubbleWrap] fail err', e);
+        }
     }
 
     // ---------------- 彩虹泡泡 ----------------
@@ -1234,7 +1321,7 @@ export class GameManager extends Component {
             if (this.currentLevel === 0) {
                 this.showOverlay('通关！', cfg.outro, [{
                     label: '下一节',
-                    action: () => { this.hideOverlay(); this.loadLevel(1); },
+                    action: () => { this.hideOverlay(); this.gotoLevel(1); },
                 }]);
             } else {
                 this.showOverlay('教学完成！', '欢迎进入泡泡世界。', [{
@@ -1249,7 +1336,7 @@ export class GameManager extends Component {
         if (pos >= 0 && pos < list.length - 1) {
             this.showOverlay('通关！', cfg.outro, [{
                 label: '下一关',
-                action: () => { this.hideOverlay(); this.loadLevel(list[pos + 1]); },
+                action: () => { this.hideOverlay(); this.gotoLevel(list[pos + 1]); },
             }]);
             return;
         }
@@ -1264,30 +1351,34 @@ export class GameManager extends Component {
                     s.lastChapter = 2;
                     writeSave(s);
                     const next = this.firstIncompleteIn(s, DYNAMIC_LEVELS);
-                    this.loadLevel(next === null ? DYNAMIC_LEVELS[0] : next);
+                    this.gotoLevel(next === null ? DYNAMIC_LEVELS[0] : next);
                 },
             }, {
                 label: '再玩一次',
-                action: () => { this.hideOverlay(); this.loadLevel(this.currentLevel); },
+                action: () => { this.hideOverlay(); this.gotoLevel(this.currentLevel); },
             }]);
         } else {
             this.showOverlay(`${chapterName} 通关！`, cfg.outro, [{
                 label: '再玩一次',
-                action: () => { this.hideOverlay(); this.loadLevel(this.currentLevel); },
+                action: () => { this.hideOverlay(); this.gotoLevel(this.currentLevel); },
             }]);
         }
     }
 
     private timeUp() {
-        if (!this.playing) return;
-        this.playing = false;
-        this.showOverlay('时间到', '再试一次，找到自己的节拍。', [{
-            label: '重新开始',
-            action: () => {
-                this.hideOverlay();
-                this.loadLevel(this.currentLevel);
-            },
-        }]);
+        try {
+            if (!this.playing) return;
+            this.playing = false;
+            this.showOverlay('时间到', '再试一次，找到自己的节拍。', [{
+                label: '重新开始',
+                action: () => {
+                    this.hideOverlay();
+                    this.gotoLevel(this.currentLevel);
+                },
+            }]);
+        } catch (e) {
+            console.error('[BubbleWrap] timeup err', e);
+        }
     }
 
     // ---------------- HUD / 遮罩 ----------------
@@ -1319,19 +1410,24 @@ export class GameManager extends Component {
         this.rainbowLabel = this.makeLabel('', 22, COLOR_PURPLE, new Vec3(0, 428, 0));
 
         // “目标”提示字 + 单个大目标圆点
-        this.makeLabel('目标', 18, gray, new Vec3(0, 628, 0));
+        this.targetHint = this.makeLabel('目标', 18, gray, new Vec3(0, 628, 0));
         this.targetBar = new Node('TargetBar');
         this.targetBar.layer = Layers.Enum.UI_2D;
         this.targetBar.addComponent(UITransform).setContentSize(100, 100);
         this.targetBar.setPosition(0, 560, 0);
         this.node.addChild(this.targetBar);
         this.targetStrip = this.targetBar;
+        this.hudNodes = [
+            this.titleLabel.node, this.subtitleLabel.node, this.remainLabel.node,
+            this.comboLabel.node, this.timerLabel.node, this.missLabel.node,
+            this.rainbowLabel.node, this.targetHint.node, this.targetBar,
+        ];
 
         // 左上角关卡内按钮：重新开始 + 返回主菜单（仅游戏进行中显示）
         this.restartBtn = this.buildCornerButton('重新开始', new Vec3(-280, 625, 0));
         this.restartBtn.on(Button.EventType.CLICK, () => {
             if (!this.restartBtn.active) return;
-            this.loadLevel(this.currentLevel);
+            this.gotoLevel(this.currentLevel);
         }, this);
         this.homeBtn = this.buildCornerButton('返回主菜单', new Vec3(-140, 625, 0));
         this.homeBtn.on(Button.EventType.CLICK, () => {
@@ -1345,26 +1441,26 @@ export class GameManager extends Component {
         this.buildOverlay();
     }
 
+    private setHudVisible(on: boolean) {
+        for (const n of this.hudNodes) {
+            if (n && n.isValid) n.active = on;
+        }
+    }
+
     /** 左上角小按钮：圆角半透明背景 + 居中文字 */
     private buildCornerButton(text: string, pos: Vec3): Node {
         const node = new Node('CornerBtn');
         node.layer = Layers.Enum.UI_2D;
-        const w = 110, h = 30;
+        const w = 118, h = 34;
         node.addComponent(UITransform).setContentSize(w, h);
         node.setPosition(pos);
         this.node.addChild(node);
-        const g = node.addComponent(Graphics);
-        g.fillColor = new Color(230, 238, 246, 220);
-        g.roundRect(-w / 2, -h / 2, w, h, 8);
-        g.fill();
-        g.lineWidth = 1.5;
-        g.strokeColor = new Color(205, 220, 235, 255);
-        g.roundRect(-w / 2, -h / 2, w, h, 8);
-        g.stroke();
-        const btn = node.addComponent(Button);
-        btn.transition = Button.Transition.COLOR;
-        btn.normalColor = new Color(255, 255, 255, 255);
-        btn.pressedColor = new Color(200, 220, 240, 255);
+        node.addComponent(Graphics);
+        this.paintRoundBtn(node, w, h, 10,
+            new Color(255, 255, 255, 235), new Color(212, 226, 240, 255), 1.5);
+        node.addComponent(Button);
+        this.hookPress(node, w, h, 10,
+            new Color(228, 240, 252, 255), new Color(212, 226, 240, 255));
         const lbl = new Node('Label');
         lbl.layer = Layers.Enum.UI_2D;
         lbl.addComponent(UITransform).setContentSize(w, h);
@@ -1374,10 +1470,31 @@ export class GameManager extends Component {
         label.string = text;
         label.fontSize = 16;
         label.lineHeight = 16;
-        label.color = new Color(90, 120, 150, 255);
+        label.color = new Color(96, 124, 152, 255);
         label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER;
         return node;
+    }
+
+    private paintRoundBtn(node: Node, w: number, h: number, r: number, fill: Color, stroke: Color, lw: number) {
+        const g = node.getComponent(Graphics)!;
+        g.clear();
+        g.fillColor = fill;
+        g.roundRect(-w / 2, -h / 2, w, h, r);
+        g.fill();
+        if (lw > 0) {
+            g.lineWidth = lw;
+            g.strokeColor = stroke;
+            g.roundRect(-w / 2, -h / 2, w, h, r);
+            g.stroke();
+        }
+    }
+
+    private hookPress(node: Node, w: number, h: number, r: number, pressed: Color, stroke: Color) {
+        const normal = new Color(255, 255, 255, 235);
+        node.on(Node.EventType.TOUCH_START, () => this.paintRoundBtn(node, w, h, r, pressed, stroke, 1.5), this);
+        node.on(Node.EventType.TOUCH_END, () => this.paintRoundBtn(node, w, h, r, normal, stroke, 1.5), this);
+        node.on(Node.EventType.TOUCH_CANCEL, () => this.paintRoundBtn(node, w, h, r, normal, stroke, 1.5), this);
     }
 
     private buildOverlay() {
@@ -1420,16 +1537,15 @@ export class GameManager extends Component {
     private buildOverlayButton(spriteFrame: Sprite['spriteFrame'], pos: Vec3): Node {
         const node = new Node('OverlayBtn');
         node.layer = Layers.Enum.UI_2D;
-        node.addComponent(UITransform).setContentSize(240, 84);
+        const w = 250, h = 82, r = 26;
+        node.addComponent(UITransform).setContentSize(w, h);
         node.setPosition(pos);
         this.overlay.addChild(node);
-        const sp = node.addComponent(Sprite);
-        sp.spriteFrame = spriteFrame;
-        sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        const btn = node.addComponent(Button);
-        btn.transition = Button.Transition.COLOR;
-        btn.normalColor = new Color(255, 255, 255, 255);
-        btn.pressedColor = new Color(210, 230, 250, 255);
+        node.addComponent(Graphics);
+        this.paintRoundBtn(node, w, h, r,
+            new Color(255, 255, 255, 245), new Color(214, 228, 242, 255), 2);
+        node.addComponent(Button);
+        this.hookPress(node, w, h, r, new Color(228, 240, 252, 255), new Color(214, 228, 242, 255));
         node.on(Button.EventType.CLICK, () => {
             const act = node === this.btnA ? this.actionA
                 : node === this.btnB ? this.actionB
@@ -1438,12 +1554,13 @@ export class GameManager extends Component {
             this.hideOverlay();
             act && act();
         }, this);
-        const label = this.makeLabelOn(node, '', 34, new Color(80, 110, 135, 255), new Vec3(0, 0, 0));
+        const label = this.makeLabelOn(node, '', 32, new Color(86, 116, 146, 255), new Vec3(0, 0, 0));
         label.node.name = 'Label';
         return node;
     }
 
     private showOverlay(title: string, desc: string, buttons: { label: string; action: () => void }[]) {
+        this.setHudVisible(false);
         this.overlayTitle.string = title;
         this.overlayDesc.string = desc;
         // 遮罩显示时隐藏关卡内按钮
@@ -1462,6 +1579,7 @@ export class GameManager extends Component {
 
     private hideOverlay() {
         this.overlay.active = false;
+        if (this.playing) this.setHudVisible(true);
         // 遮罩隐藏时恢复关卡内按钮（仅在游戏进行中）
         if (this.playing) {
             this.restartBtn.active = true;
@@ -1476,61 +1594,56 @@ export class GameManager extends Component {
 
     /** 测试阶段专用：选关面板 */
     private showLevelSelect() {
+        if (!IS_DEV) {
+            this.showChapterSelect();
+            return;
+        }
         this.overlayTitle.string = '选择关卡';
-        this.overlayDesc.string = '教学章 → 第一章（静态）→ 第二章（动态）';
+        this.overlayDesc.string = '开发工具：可直接进入任意一节';
         this.restartBtn.active = false;
         this.homeBtn.active = false;
         this.btnA.active = false;
         this.btnB.active = false;
         this.btnC.active = false;
         this.lvGrid.removeAllChildren();
-        const heading = (text: string, y: number) => {
-            const h = this.makeLabelOn(this.lvGrid, text, 22, new Color(120, 140, 160, 255), new Vec3(0, y, 0));
-            h.node.getComponent(UITransform)!.setContentSize(520, 30);
-            return h;
+        let y = 250;
+        const heading = (text: string) => {
+            const h = this.makeLabelOn(this.lvGrid, text, 19, new Color(120, 140, 160, 255), new Vec3(-150, y, 0));
+            h.node.getComponent(UITransform)!.setContentSize(340, 24);
+            h.horizontalAlign = Label.HorizontalAlign.LEFT;
+            y -= 25;
         };
-        const addCells = (indexes: number[], y: number, width: number) => {
-            const step = Math.min(220, 150 * indexes.length - 40);
-            const x0 = -((indexes.length - 1) * step) / 2;
-            indexes.forEach((i, k) => {
-                const cell = new Node(`Lv${i}`);
-                cell.layer = Layers.Enum.UI_2D;
-                cell.addComponent(UITransform).setContentSize(width, 74);
-                cell.setPosition(x0 + k * step, y, 0);
-                const g = cell.addComponent(Graphics);
-                g.fillColor = new Color(242, 247, 252, 255);
-                g.roundRect(-width / 2, -37, width, 74, 14);
-                g.fill();
-                g.lineWidth = 2;
-                g.strokeColor = new Color(205, 220, 235, 255);
-                g.roundRect(-width / 2, -37, width, 74, 14);
-                g.stroke();
-                cell.addComponent(Button).transition = Button.Transition.COLOR;
-                this.makeLabelOn(cell, LEVELS[i].num, 24, new Color(90, 120, 150, 255), new Vec3(0, 0, 0));
-                cell.on(Button.EventType.CLICK, () => {
-                    this.hideOverlay();
-                    this.loadLevel(i);
-                }, this);
-                this.lvGrid.addChild(cell);
-            });
+        const row = (i: number) => {
+            const cfg = LEVELS[i];
+            const node = new Node(`Lv${i}`);
+            node.layer = Layers.Enum.UI_2D;
+            node.addComponent(UITransform).setContentSize(330, 50);
+            node.setPosition(0, y, 0);
+            node.addComponent(Button);
+            const label = this.makeLabelOn(node, `${cfg.num} · ${cfg.theme}`, 21,
+                new Color(86, 116, 146, 255), new Vec3(-140, 0, 0));
+            label.node.getComponent(UITransform)!.setContentSize(300, 36);
+            label.horizontalAlign = Label.HorizontalAlign.LEFT;
+            node.on(Button.EventType.CLICK, () => {
+                this.hideOverlay();
+                this.gotoLevel(i);
+            }, this);
+            this.lvGrid.addChild(node);
+            y -= 57;
         };
-        heading('教学章', 158);
-        addCells(TUTORIAL_LEVELS, 205, 130);
-        heading('第一章', 96);
-        addCells(STATIC_LEVELS, 34, 130);
-        heading('第二章', -76);
-        addCells(DYNAMIC_LEVELS, -138, 116);
-        // 底部返回按钮
+        heading('必经教学');
+        TUTORIAL_LEVELS.forEach(row);
+        heading('第一章 · 静态');
+        STATIC_LEVELS.forEach(row);
+        heading('第二章 · 动态');
+        DYNAMIC_LEVELS.forEach(row);
         const back = new Node('Back');
         back.layer = Layers.Enum.UI_2D;
-        back.addComponent(UITransform).setContentSize(200, 60);
-        back.setPosition(0, -205, 0);
-        const bg = back.addComponent(Graphics);
-        bg.fillColor = new Color(230, 238, 246, 255);
-        bg.roundRect(-100, -30, 200, 60, 14);
-        bg.fill();
-        back.addComponent(Button).transition = Button.Transition.COLOR;
-        this.makeLabelOn(back, '← 返回标题', 22, new Color(110, 130, 150, 255), new Vec3(0, 0, 0));
+        back.addComponent(UITransform).setContentSize(200, 44);
+        back.setPosition(0, y - 4, 0);
+        back.addComponent(Button);
+        const backLabel = this.makeLabelOn(back, '返回主界面', 20, new Color(110, 130, 150, 255), new Vec3(0, 0, 0));
+        backLabel.node.getComponent(UITransform)!.setContentSize(240, 36);
         back.on(Button.EventType.CLICK, () => { this.hideOverlay(); this.showTitle(); }, this);
         this.lvGrid.addChild(back);
         this.lvGrid.active = true;
