@@ -1241,6 +1241,7 @@ export class GameManager extends Component {
                     this.gotoLevel(this.currentLevel);
                 },
             }]);
+            this.showHomeOnOverlay();
         } catch (e) {
             console.error('[BubbleWrap] fail err', e);
         }
@@ -1296,6 +1297,16 @@ export class GameManager extends Component {
 
     // ---------------- 通关 / 时间到 / 存档 ----------------
 
+    /** 在结算/失败/超时弹层上启用第三颗按钮：返回主菜单（回到开始界面） */
+    private showHomeOnOverlay() {
+        this.btnC.active = true;
+        this.labelC.string = '返回主菜单';
+        this.actionC = () => {
+            this.hideOverlay();
+            this.showTitle();
+        };
+    }
+
     private completeLevel() {
         if (!this.playing) return;
         this.playing = false;
@@ -1323,11 +1334,13 @@ export class GameManager extends Component {
                     label: '下一节',
                     action: () => { this.hideOverlay(); this.gotoLevel(1); },
                 }]);
+                this.showHomeOnOverlay();
             } else {
                 this.showOverlay('教学完成！', '欢迎进入泡泡世界。', [{
                     label: '选择章节',
                     action: () => { this.hideOverlay(); this.showChapterSelect(); },
                 }]);
+                this.showHomeOnOverlay();
             }
             return;
         }
@@ -1338,6 +1351,7 @@ export class GameManager extends Component {
                 label: '下一关',
                 action: () => { this.hideOverlay(); this.gotoLevel(list[pos + 1]); },
             }]);
+            this.showHomeOnOverlay();
             return;
         }
         // 该章最后一关
@@ -1357,11 +1371,13 @@ export class GameManager extends Component {
                 label: '再玩一次',
                 action: () => { this.hideOverlay(); this.gotoLevel(this.currentLevel); },
             }]);
+            this.showHomeOnOverlay();
         } else {
             this.showOverlay(`${chapterName} 通关！`, cfg.outro, [{
                 label: '再玩一次',
                 action: () => { this.hideOverlay(); this.gotoLevel(this.currentLevel); },
             }]);
+            this.showHomeOnOverlay();
         }
     }
 
@@ -1376,6 +1392,7 @@ export class GameManager extends Component {
                     this.gotoLevel(this.currentLevel);
                 },
             }]);
+            this.showHomeOnOverlay();
         } catch (e) {
             console.error('[BubbleWrap] timeup err', e);
         }
