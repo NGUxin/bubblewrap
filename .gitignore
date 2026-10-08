@@ -7,6 +7,8 @@
 /temp/
 /local/
 /build/
+/dist-crazygames/
+/dist-crazygames.zip
 /profiles/
 /native/engine/android/**/*/assets
 
@@ -24,3 +26,8 @@ node_modules/
 # WebStorm
 #//////////////////////////
 .idea/
+
+#//////////////////////////
+# macOS
+#//////////////////////////
+.DS_Store

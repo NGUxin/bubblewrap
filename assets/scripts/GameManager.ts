@@ -181,12 +181,14 @@ interface SaveData {
     bestCombo: number;
     lastChapter: 0 | 1 | 2;   // 0=无 1=第一章 2=第二章（用于“继续游戏”）
     intro: string[];          // 已经做过“首次出现”重点提示的特殊机制（全流程只提示一次）
+    stars: Record<string, number>;   // 每关最好星级（0-3），key = 关卡序号
+    bestScores: Record<string, number>; // 每关最高分
 }
 
 const SAVE_KEY = 'bubblewrap_save_v1';
 
 function defaultSave(): SaveData {
-    return { version: 3, tutorialsDone: false, ch1: [], ch2: [], bestCombo: 0, lastChapter: 0, intro: [] };
+    return { version: 3, tutorialsDone: false, ch1: [], ch2: [], bestCombo: 0, lastChapter: 0, intro: [], stars: {}, bestScores: {} };
 }
 
 function chapterGroupOf(index: number): 'tutorial' | 'ch1' | 'ch2' {
@@ -240,6 +242,8 @@ function loadSave(): SaveData {
                     bestCombo: Number(d.bestCombo) || 0,
                     lastChapter: d.lastChapter === 1 || d.lastChapter === 2 ? d.lastChapter : 0,
                     intro: Array.isArray(d.intro) ? d.intro.filter((x: any) => typeof x === 'string') : [],
+                    stars: (d.stars && typeof d.stars === 'object') ? d.stars : {},
+                    bestScores: (d.bestScores && typeof d.bestScores === 'object') ? d.bestScores : {},
                 };
             }
             // v1 旧档迁移：曾通关即视为教程完成，已通关关卡按分组归位
@@ -252,6 +256,8 @@ function loadSave(): SaveData {
                 bestCombo: Number(d.bestCombo) || 0,
                 lastChapter: 0,
                 intro: [],
+                stars: {},
+                bestScores: {},
             };
         }
     } catch { /* ignore */ }
@@ -281,6 +287,23 @@ export class GameManager extends Component {
     private currentLevel = 0;
     private combo = 0;
     private lastPopTime = 0;
+    // 连击：0.9 秒内继续点对就算连上；最多升 7 个半音
+    private static readonly COMBO_WINDOW = 0.9;
+    private comboTimer = 0;
+    private maxComboThisLevel = 0;
+    private shakeAmp = 0;
+    private lastPitch = 1;
+    // 连击音阶：combo_1..combo_8（预生成的五声音阶上行）
+    private comboChimes: AudioClip[] = [];
+    private score = 0;              // 本关分数
+    // 音频（BGM 独立音源 + 开关设置）
+    private bgmAudio: AudioSource = null!;
+    private musicBtn: Node = null!;
+    private sfxBtn: Node = null!;
+    private musicOn = true;
+    private sfxOn = true;
+    private static readonly MUSIC_VOLUME = 0.45;
+    private static readonly SETTINGS_KEY = 'bubblewrap_settings_v1';
     private timerLeft = 0;
     private playing = false;
     private chgAcc = 0;
@@ -330,6 +353,7 @@ export class GameManager extends Component {
     private comboLabel: Label = null!;
     private timerLabel: Label = null!;
     private missLabel: Label = null!;
+    private scoreLabel: Label = null!;
     private missDots: Graphics = null!;
     private descLabel: Label = null!;
     private progressG: Graphics = null!;
@@ -351,12 +375,16 @@ export class GameManager extends Component {
     private spotPulse = 0;
     private spotTime = 0;
     private spotAt = new Vec3(0, 0, 0);
+    // CrazyGames：上一次上报给 SDK 的“是否处于游戏状态”
+    private cgPlaying = false;
 
     // 遮罩
     private overlay: Node = null!;
     private overlayCard: Node = null!;
     private overlayTitle: Label = null!;
     private overlayDesc: Label = null!;
+    private starRow: Node = null!;
+    private starRowG: Graphics = null!;
     private overlayBg: Graphics = null!;
     private btnA: Node = null!;
     private btnB: Node = null!;
@@ -386,9 +414,33 @@ export class GameManager extends Component {
     }
 
     start() {
+        this.loadAudioSettings();   // 先读设置，保证首次播放就是用户设定的音量
+        this.buildBackdrop();
         this.buildHud();
         this.loadAllAudio();
-        this.showTitle();
+        // 平台侧统一静音入口（CrazyGames 的 muteAudio 设置会调用它）
+        (globalThis as any).__popBubblesMute = (on: boolean) => this.setAllAudioMuted(!!on);
+        // CrazyGames 要求“直接进入游戏”（land directly in gameplay）：
+        // 网页版（存在 CG 适配层）启动后直接进入下一个可玩关卡，不再停留标题页；
+        // 抖音小游戏包没有 CG，仍走原来的标题页流程。
+        const cgHost = !!(globalThis as any).CG;
+        if (cgHost) {
+            try {
+                const sv = loadSave();
+                let next = 0;
+                if (sv.tutorialsDone) {
+                    const list = sv.lastChapter === 2 ? DYNAMIC_LEVELS : STATIC_LEVELS;
+                    const n = this.firstIncompleteIn(sv, list);
+                    next = n === null ? list[0] : n;
+                }
+                this.gotoLevel(next);
+            } catch (e) {
+                this.cap('autostart err', e);
+                this.showTitle();
+            }
+        } else {
+            this.showTitle();
+        }
         // 全局错误记录（配合 console / tt.onError 定位重启问题）
         const g = globalThis as any;
         try {
@@ -412,10 +464,52 @@ export class GameManager extends Component {
         if (g.tt && g.tt.onError) {
             try { g.tt.onError((e: any) => this.cap('tt', e && e.errMsg)); } catch { /* ignore */ }
         }
+        // CrazyGames：场景就绪，结束 loading 阶段
+        this.cgEvent('loadingStop');
+        // 通知 HTML 加载层：收起进度条
+        try {
+            const g2 = globalThis as any;
+            g2.__popBubblesReady = true;
+            if (typeof g2.__popBubblesOnReady === 'function') g2.__popBubblesOnReady();
+        } catch { /* 忽略 */ }
+    }
+
+    /**
+     * 超尺寸白色底板：始终垫在所有内容之下。
+     * 竖屏画面在桌面横向窗口里会被两侧留白（SHOW_ALL），
+     * 不铺这层的话留白会是画布清屏色（黑），铺上后与游戏白底完全连成一片。
+     */
+    private buildBackdrop() {
+        try {
+            const n = new Node('Backdrop');
+            n.layer = Layers.Enum.UI_2D;
+            n.addComponent(UITransform).setContentSize(4000, 4000);
+            const g = n.addComponent(Graphics);
+            g.fillColor = new Color(255, 255, 255, 255);
+            g.rect(-2000, -2000, 4000, 4000);
+            g.fill();
+            this.node.addChild(n);
+            n.setSiblingIndex(0);
+        } catch (e) {
+            this.cap('backdrop err', e);
+        }
+    }
+
+    /** CrazyGames SDK 事件上报：未接入 / 环境不支持时是空操作，永不影响游戏 */
+    private cgEvent(name: 'loadingStart' | 'loadingStop' | 'gameplayStart' | 'gameplayStop' | 'happyTime') {
+        try {
+            const cg = (globalThis as any).CG;
+            if (cg && typeof cg[name] === 'function') cg[name]();
+        } catch { /* ignore */ }
     }
 
     update(dt: number) {
         try {
+            // CrazyGames：进入/离开可玩状态时上报（官方用于统计 time-to-gameplay）
+            if (this.cgPlaying !== this.playing) {
+                this.cgPlaying = this.playing;
+                this.cgEvent(this.playing ? 'gameplayStart' : 'gameplayStop');
+            }
             if (this.playing && this.timerLeft > 0) {
                 this.timerLeft -= dt;
                 if (this.timerLeft <= 0) {
@@ -500,6 +594,24 @@ export class GameManager extends Component {
             } else if (this.playing && this.tipQueue.length > 0) {
                 try { this.showTip(this.tipQueue.shift()!); } catch (e) { this.cap('tip err', e); }
             }
+            // 连击维护：超过窗口没点对就断连（清空连击字）
+            if (this.playing) {
+                this.comboTimer += dt;
+                if (this.combo > 0 && this.comboTimer > GameManager.COMBO_WINDOW) {
+                    this.combo = 0;
+                    this.updateComboLabel();
+                }
+            }
+            // 屏幕震动：逐帧衰减并抖动「泡泡容器」（结束后严格归位到 0,0）。
+            // 注意：不要抖 Canvas —— 它的基准位置是屏幕中心，改动它会破坏 UI 坐标换算（点击会全部失效）。
+            if (this.shakeAmp > 0.05) {
+                this.shakeAmp *= 0.85;
+                const a = this.shakeAmp;
+                this.bubbleContainer.setPosition((Math.random() - 0.5) * a, (Math.random() - 0.5) * a, 0);
+            } else if (this.shakeAmp !== 0) {
+                this.shakeAmp = 0;
+                this.bubbleContainer.setPosition(0, 0, 0);
+            }
             // 特殊泡泡重点提示：开场卡结束后逐个上（点一下继续）
             if (!this.spotActive && this.playing && this.spotQueue.length > 0 && this.tipTimer <= 0) {
                 try {
@@ -553,6 +665,23 @@ export class GameManager extends Component {
             'pop_red', 'pop_orange', 'pop_yellow', 'pop_green',
             'pop_cyan', 'pop_blue', 'pop_violet', RAINBOW_AUDIO, 'wrong',
         ];
+        // 背景音乐：独立音源，循环播放
+        try {
+            const bgmNode = new Node('BgmAudio');
+            bgmNode.layer = Layers.Enum.UI_2D;
+            this.node.addChild(bgmNode);
+            this.bgmAudio = bgmNode.addComponent(AudioSource);
+            this.bgmAudio.loop = true;
+            this.bgmAudio.volume = this.musicOn ? GameManager.MUSIC_VOLUME : 0;
+            resources.load('audio/bgm', AudioClip, (err, clip) => {
+                if (!err && clip && this.bgmAudio) {
+                    this.bgmAudio.clip = clip;
+                    this.startBgm();
+                }
+            });
+        } catch (e) {
+            this.cap('bgm init err', e);
+        }
         const loadClip = (k: string, attempt: number) => {
             resources.load(`audio/${k}`, AudioClip, (err, clip) => {
                 if (!err && clip) {
@@ -563,6 +692,18 @@ export class GameManager extends Component {
             });
         };
         keys.forEach((k) => loadClip(k, 0));
+        // 连击音阶：Cocos 3.8 的 AudioSource 没有 pitch/playbackRate，无法运行时变速，
+        // 因此预生成 8 个音高档位（combo_1..combo_8），连击时按档位叠放。
+        const loadCombo = (i: number, attempt: number) => {
+            resources.load(`audio/combo_${i}`, AudioClip, (err, clip) => {
+                if (!err && clip) {
+                    this.comboChimes[i - 1] = clip;
+                } else if (attempt < 4) {
+                    this.scheduleOnce(() => loadCombo(i, attempt + 1), 0.5);
+                }
+            });
+        };
+        for (let i = 1; i <= 8; i++) loadCombo(i, 0);
         // 1 秒后检查：仍未加载的音频再补一次，避免首局静音
         this.scheduleOnce(() => {
             keys.forEach((k) => {
@@ -581,15 +722,6 @@ export class GameManager extends Component {
         resources.load('bubbles/bubble_rainbow/spriteFrame', SpriteFrame, (err, sf) => {
             if (!err && sf) BUBBLE_FRAMES['rainbow'] = sf;
         });
-        // 保险：首次 preload 若失败，强制重载，保证声音可播
-        this.scheduleOnce(() => {
-            const clip = this.popAudio.clip;
-            if (clip && !(this.popAudio as any)._isLoaded) {
-                this.popAudio.clip = null;
-                this.popAudio.clip = clip;
-                this.popAudio.play();
-            }
-        }, 0.5);
     }
 
     private playClip(key: string, pitch: number) {
@@ -598,13 +730,216 @@ export class GameManager extends Component {
             // key 可能是颜色名(red)或音频名(pop_red/wrong/pop_rainbow)，统一换算
             const clipKey = key === 'wrong' || key === RAINBOW_AUDIO ? key : `pop_${key}`;
             const clip = this.clips[clipKey];
-            if (clip && this.popAudio.clip !== clip) {
-                this.popAudio.clip = clip;   // 颜色音频就绪时换专属音色；未就绪则沿用旧 clip
-            }
-            this.popAudio.pitch = Math.max(0.5, Math.min(pitch, 2.0));
-            const ret: any = this.popAudio.play();
-            if (ret && typeof ret.catch === 'function') ret.catch(() => { /* 忽略播放失败 */ });
+            // 注意：3.8 的 AudioSource 没有 pitch/playbackRate，音高只能靠预制音频文件，
+            // 这里只记录一个值供调试查看，不影响播放。
+            this.lastPitch = Math.max(0.5, Math.min(pitch, 2.6));
+            if (!clip) return;
+            // 关键修复：必须用 playOneShot，不能用 play()。
+            // play() 内部会先 stop() 掉当前播放（引擎 audio-source.ts:366），
+            // 快速连点时会把上一个泡泡的声音直接掐断 —— 听感就是"发闷、丢音、不够脆"。
+            // playOneShot 每次创建独立播放器，可以真正叠着响。
+            this.popAudio.playOneShot(clip, 1);
         } catch { /* 无音频设备时静默 */ }
+    }
+
+    /** 连击音阶：第 2 连起叠一个上行小钟音（五声音阶），越高越清亮 */
+    private playComboChime() {
+        try {
+            if (this.combo < 2 || this.comboChimes.length === 0) return;
+            const idx = Math.min(this.combo - 2, this.comboChimes.length - 1);
+            const clip = this.comboChimes[idx];
+            if (!clip) return;
+            // 音量随连击略增但封顶，避免高连击时刺耳
+            const vol = 0.55 + Math.min(this.combo - 2, 6) * 0.06;
+            this.popAudio.playOneShot(clip, vol);
+        } catch { /* 忽略 */ }
+    }
+
+    // ---------------- 连击 / 手感 ----------------
+
+    /** 每次「正确击破」时结算连击：窗口内连上，否则从 1 重新开始 */
+    private registerHit() {
+        try {
+            this.combo = this.comboTimer <= GameManager.COMBO_WINDOW ? this.combo + 1 : 1;
+            this.comboTimer = 0;
+            if (this.combo > this.maxComboThisLevel) this.maxComboThisLevel = this.combo;
+            // 连击越高，屏幕抖得越明显（封顶，避免眩晕）
+            if (this.combo >= 2) this.shakeScreen(Math.min(2 + this.combo * 0.9, 13));
+            // 每 5 连给一次轻震动
+            if (this.combo >= 5 && this.combo % 5 === 0) this.haptic(this.combo >= 15 ? 'medium' : 'light');
+        } catch (e) {
+            this.cap('combo err', e);
+        }
+    }
+
+    /** 连击升调系数：每连一次升一个半音，最多升 7 个半音 */
+    private comboPitchFactor(): number {
+        const steps = Math.min(Math.max(this.combo - 1, 0), 7);
+        return Math.pow(2, steps / 12);
+    }
+
+    private updateComboLabel() {
+        try {
+            if (!this.comboLabel || !this.comboLabel.isValid) return;
+            if (this.combo >= 2) {
+                this.comboLabel.string = `COMBO x${this.combo}`;
+                const n = this.comboLabel.node;
+                Tween.stopAllByTarget(n);
+                n.setScale(1.45, 1.45, 1);
+                tween(n).to(0.14, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
+            } else {
+                this.comboLabel.string = '';
+                this.comboLabel.node.setScale(1, 1, 1);
+            }
+        } catch (e) {
+            this.cap('combo ui err', e);
+        }
+    }
+
+    /** 屏幕震动：设置一个会衰减的幅度，由 update 逐帧抖动 Canvas */
+    private shakeScreen(amp: number) {
+        this.shakeAmp = Math.max(this.shakeAmp, amp);
+    }
+
+    /** 加分：连击越高单次得分越高；点错扣分但不低于 0 */
+    private addScore(n: number) {
+        try {
+            this.score = Math.max(0, this.score + n);
+            if (this.scoreLabel && this.scoreLabel.isValid) {
+                this.scoreLabel.string = `SCORE ${this.score}`;
+                const sn = this.scoreLabel.node;
+                Tween.stopAllByTarget(sn);
+                sn.setScale(1.18, 1.18, 1);
+                tween(sn).to(0.12, { scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' }).start();
+            }
+            const key = String(this.currentLevel);
+            const save = loadSave();
+            if (!save.bestScores) save.bestScores = {};
+            if (this.score > (save.bestScores[key] || 0)) {
+                save.bestScores[key] = this.score;   // 实时记录最高分，中途退出也不丢
+                writeSave(save);
+            }
+        } catch (e) {
+            this.cap('score err', e);
+        }
+    }
+
+    // ---------------- 音频设置（BGM / 音效开关，记忆到本地） ----------------
+
+    private loadAudioSettings() {
+        try {
+            // 用工程里已有的跨平台存储封装：浏览器走 localStorage，抖音走 tt.getStorageSync
+            const raw = storageGet(GameManager.SETTINGS_KEY);
+            if (!raw) return;
+            const d = JSON.parse(raw);
+            this.musicOn = d.music !== 0;
+            this.sfxOn = d.sfx !== 0;
+        } catch { /* 读取失败用默认值 */ }
+    }
+
+    private saveAudioSettings() {
+        try {
+            storageSet(GameManager.SETTINGS_KEY, JSON.stringify({ music: this.musicOn ? 1 : 0, sfx: this.sfxOn ? 1 : 0 }));
+        } catch { /* 忽略 */ }
+    }
+
+    /** 应用音量到两个音源，并同步按钮文案 */
+    private applyAudioSettings() {
+        try {
+            if (this.bgmAudio) this.bgmAudio.volume = this.musicOn ? GameManager.MUSIC_VOLUME : 0;
+            if (this.popAudio) this.popAudio.volume = this.sfxOn ? 1 : 0;
+            const ml = this.musicBtn && this.musicBtn.getChildByName('Label');
+            const sl = this.sfxBtn && this.sfxBtn.getChildByName('Label');
+            if (ml) ml.getComponent(Label)!.string = this.musicOn ? 'Music On' : 'Music Off';
+            if (sl) sl.getComponent(Label)!.string = this.sfxOn ? 'Sound On' : 'Sound Off';
+            if (this.musicOn) this.startBgm(); else this.stopBgm();
+        } catch (e) {
+            this.cap('audio settings err', e);
+        }
+    }
+
+    private toggleMusic() {
+        this.musicOn = !this.musicOn;
+        this.saveAudioSettings();
+        this.applyAudioSettings();
+    }
+
+    private toggleSfx() {
+        this.sfxOn = !this.sfxOn;
+        this.saveAudioSettings();
+        this.applyAudioSettings();
+    }
+
+    /** 外部（如 CrazyGames 的静音设置）统一静音/恢复 */
+    private setAllAudioMuted(muted: boolean) {
+        if (muted) {
+            this.musicOn = false;
+            this.sfxOn = false;
+        } else {
+            this.musicOn = true;
+            this.sfxOn = true;
+        }
+        this.applyAudioSettings();
+    }
+
+    private startBgm() {
+        try {
+            if (!this.bgmAudio || !this.bgmAudio.clip || !this.musicOn) return;
+            if (this.bgmAudio.playing) return;
+            const ret: any = this.bgmAudio.play();
+            if (ret && typeof ret.catch === 'function') ret.catch(() => { /* 自动播放被拦截，等首次点击再试 */ });
+        } catch { /* 忽略 */ }
+    }
+
+    private stopBgm() {
+        try {
+            if (this.bgmAudio && this.bgmAudio.playing) this.bgmAudio.stop();
+        } catch { /* 忽略 */ }
+    }
+
+    /** 星级：按本关失误数评定（0-1 失误 3 星，2-3 失误 2 星，否则 1 星） */
+    private starsForLevel(): number {
+        if (this.mistakes <= 1) return 3;
+        if (this.mistakes <= 3) return 2;
+        return 1;
+    }
+
+    /** 画三颗星（filled = 亮起数量），用矢量路径，避免依赖系统字体的星形字符 */
+    private drawStars(g: Graphics, filled: number) {
+        g.clear();
+        const R = 26, r = 11, gap = 74;
+        for (let i = 0; i < 3; i++) {
+            const cx = (i - 1) * gap;
+            const on = i < filled;
+            g.fillColor = on ? new Color(255, 196, 46, 255) : new Color(226, 234, 242, 255);
+            g.strokeColor = on ? new Color(240, 168, 26, 255) : new Color(210, 222, 234, 255);
+            g.lineWidth = 2;
+            for (let k = 0; k < 10; k++) {
+                const rad = k % 2 === 0 ? R : r;
+                const a = -Math.PI / 2 + (k * Math.PI) / 5;
+                const px = cx + Math.cos(a) * rad;
+                const py = Math.sin(a) * rad;
+                if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+            }
+            g.close();
+            g.fill();
+            g.stroke();
+        }
+    }
+
+    /** 震动反馈：抖音用 tt.vibrateShort，浏览器用 navigator.vibrate；都没有则静默 */
+    private haptic(type: 'light' | 'medium' | 'heavy' = 'light') {
+        try {
+            const g = globalThis as any;
+            if (g.tt && typeof g.tt.vibrateShort === 'function') {
+                g.tt.vibrateShort({ type });
+                return;
+            }
+            const nav = (globalThis as any).navigator;
+            if (nav && typeof nav.vibrate === 'function') {
+                nav.vibrate(type === 'heavy' ? 30 : type === 'medium' ? 20 : 12);
+            }
+        } catch { /* 忽略 */ }
     }
 
     // ---------------- 标题 / 存档 ----------------
@@ -682,7 +1017,12 @@ export class GameManager extends Component {
                 this.gotoLevel(0);
             },
         }];
-        this.showOverlay('Pop Bubbles', 'Tutorial · Chapter 1 · Chapter 2', buttons);
+        // 标题需与 CrazyGames 上架名称一致（官方要求：Game name 必须与游戏内出现的标题相同）
+        // 标题页：统一用正式名 Pop Bubbles，并展示星星收集进度（给玩家一个长期目标）
+        const starSum = Object.keys(save.stars || {}).reduce((sum, k) => sum + (save.stars[k] || 0), 0);
+        const starMax = LEVELS.length * 3;
+        const scoreBest = Object.keys(save.bestScores || {}).reduce((sum, k) => sum + (save.bestScores[k] || 0), 0);
+        this.showOverlay('Pop Bubbles', `Stars ${starSum} / ${starMax}  ·  Best combo ${save.bestCombo}  ·  Total score ${scoreBest}`, buttons);
         // 开发版：完整“选择关卡”；发布版：仅通关教学后开放“选择章节”
         if (IS_DEV) {
             this.btnC.active = true;
@@ -744,6 +1084,12 @@ export class GameManager extends Component {
         this.queueIdx = 0;
         this.combo = 0;
         this.lastPopTime = 0;
+        this.comboTimer = 0;
+        this.maxComboThisLevel = 0;
+        this.shakeAmp = 0;
+        this.score = 0;
+        if (this.scoreLabel) this.scoreLabel.string = 'SCORE 0';
+        if (this.bubbleContainer) this.bubbleContainer.setPosition(0, 0, 0);
         this.timerLeft = cfg.timeLimit;
         this.playing = false;
         this.mistakes = 0;
@@ -791,8 +1137,13 @@ export class GameManager extends Component {
                 Object.entries(this.clips).map(([k, v]) => [k, !!v]),
             ),
             lastClip: () => (this.popAudio.clip ? this.popAudio.clip.name : ''),
+            comboChimes: () => this.comboChimes.filter((c) => !!c).length,
             errors: () => this.errLog.slice(),
             chainPops: () => this.chainPopCount,
+            combo: () => this.combo,
+            maxCombo: () => this.maxComboThisLevel,
+            lastPitch: () => this.lastPitch,
+            shake: () => this.shakeAmp,
             // 锁样式实时切换（0 深色圆底锁 / 1 纯透明罩 / 2 透明罩+小锁 / 3 虚线环+中央锁）
             setLockStyle: (n: number) => {
                 Bubble.lockStyle = n;
@@ -1368,6 +1719,8 @@ export class GameManager extends Component {
 
     onTouch(event: EventTouch) {
         try {
+            // 浏览器要求首次交互后才能播放音频：这里补一次 BGM 播放
+            this.startBgm();
             if (!this.playing) return;
             const cfg = LEVELS[this.currentLevel];
             const target = this.queue[this.queueIdx];
@@ -1427,10 +1780,20 @@ export class GameManager extends Component {
             if (fromChain) {
                 // 连锁带出的消除：只做表现，不计入目标队列推进、不判错
                 this.chainPopCount++;
-                this.playClip(colorKey, 1.15);
+                // 一次点击引爆一片：音高随第几颗顺次爬升，配合震动做「连环爆」的感觉
+                this.playClip(colorKey, 1.15 + Math.min(this.chainPopCount, 10) * 0.03);
+                this.shakeScreen(3 + Math.min(this.chainPopCount, 9));
+                if (this.chainPopCount % 4 === 0) this.haptic('light');
+                this.addScore(5);   // 连锁带出的每颗都是纯收益
             } else if (matched) {
-                const pitch = (isRainbow ? 1.5 : COLORS[colorKey].pitch);
+                // 连击：先结算本次连击，再按连击数升调（每连一次升半音，最多 7 个半音）
+                this.registerHit();
+                const pitch = (isRainbow ? 1.5 : COLORS[colorKey].pitch) * this.comboPitchFactor();
                 this.playClip(isRainbow ? RAINBOW_AUDIO : colorKey, pitch);
+                this.updateComboLabel();
+                this.playComboChime();
+                // 分数：基础 10 分 + 连击加成（连得越久单次越值钱）
+                this.addScore(10 + Math.min(this.combo, 10) * 2);
 
                 if (cfg.timeBonus > 0 && this.timerLeft > 0) {
                     this.timerLeft = Math.min(this.timerLeft + cfg.timeBonus, cfg.timeLimit);
@@ -1454,6 +1817,7 @@ export class GameManager extends Component {
             } else {
                 this.playClip('wrong', 0.55);
                 this.registerWrong();
+                this.addScore(-5);
                 if (cfg.timeLimit > 0) {
                     this.timerLeft = Math.max(0, this.timerLeft - 1);
                     this.timerLabel.string = `Time ${Math.ceil(this.timerLeft)}`;
@@ -1753,10 +2117,19 @@ export class GameManager extends Component {
     private completeLevel() {
         if (!this.playing) return;
         this.playing = false;
+        // CrazyGames：通关上报 happy time（可选事件，用于平台算法）
+        this.cgEvent('happyTime');
         const cfg = LEVELS[this.currentLevel];
 
         const save = loadSave();
-        save.bestCombo = Math.max(save.bestCombo, this.combo);
+        save.bestCombo = Math.max(save.bestCombo, this.maxComboThisLevel);
+        // 星级与最高分（按失误数评星：0-1 失误 3 星，2-3 失误 2 星，其余 1 星）
+        const earnedStars = this.starsForLevel();
+        if (!save.stars) save.stars = {};
+        if (!save.bestScores) save.bestScores = {};
+        const lvKey = String(this.currentLevel);
+        save.stars[lvKey] = Math.max(save.stars[lvKey] || 0, earnedStars);
+        save.bestScores[lvKey] = Math.max(save.bestScores[lvKey] || 0, this.score);
         const group = chapterGroupOf(this.currentLevel);
         if (group === 'tutorial') {
             if (this.currentLevel === 1) save.tutorialsDone = true;
@@ -1774,16 +2147,16 @@ export class GameManager extends Component {
         // 章节内顺序推进
         if (group === 'tutorial') {
             if (this.currentLevel === 0) {
-                this.showOverlay('Level Complete!', cfg.outro, [{
+                this.showOverlay('Level Complete!', `${cfg.outro}\nScore ${this.score} · Best combo ${this.maxComboThisLevel}`, [{
                     label: 'Next',
                     action: () => { this.hideOverlay(); this.gotoLevel(1); },
-                }]);
+                }], false, earnedStars);
                 this.showHomeOnOverlay();
             } else {
-                this.showOverlay('Tutorial Complete!', 'Welcome to the bubble world.', [{
+                this.showOverlay('Tutorial Complete!', `Welcome to the bubble world.\nScore ${this.score} · Best combo ${this.maxComboThisLevel}`, [{
                     label: 'Select Chapter',
                     action: () => { this.hideOverlay(); this.showChapterSelect(); },
-                }]);
+                }], false, earnedStars);
                 this.showHomeOnOverlay();
             }
             return;
@@ -1791,17 +2164,17 @@ export class GameManager extends Component {
         const list = group === 'ch1' ? STATIC_LEVELS : DYNAMIC_LEVELS;
         const pos = list.indexOf(this.currentLevel);
         if (pos >= 0 && pos < list.length - 1) {
-            this.showOverlay('Level Complete!', cfg.outro, [{
+            this.showOverlay('Level Complete!', `${cfg.outro}\nScore ${this.score} · Best combo ${this.maxComboThisLevel}`, [{
                 label: 'Next Level',
                 action: () => { this.hideOverlay(); this.gotoLevel(list[pos + 1]); },
-            }]);
+            }], false, earnedStars);
             this.showHomeOnOverlay();
             return;
         }
         // 该章最后一关
         const chapterName = group === 'ch1' ? 'Chapter 1' : 'Chapter 2';
         if (group === 'ch1') {
-            this.showOverlay(`${chapterName} Complete!`, cfg.outro, [{
+            this.showOverlay(`${chapterName} Complete!`, `${cfg.outro}\nScore ${this.score} · Best combo ${this.maxComboThisLevel}`, [{
                 label: 'Enter Chapter 2',
                 action: () => {
                     this.hideOverlay();
@@ -1814,13 +2187,13 @@ export class GameManager extends Component {
             }, {
                 label: 'Play Again',
                 action: () => { this.hideOverlay(); this.gotoLevel(this.currentLevel); },
-            }]);
+            }], false, earnedStars);
             this.showHomeOnOverlay();
         } else {
-            this.showOverlay(`${chapterName} Complete!`, cfg.outro, [{
+            this.showOverlay(`${chapterName} Complete!`, `${cfg.outro}\nScore ${this.score} · Best combo ${this.maxComboThisLevel}`, [{
                 label: 'Play Again',
                 action: () => { this.hideOverlay(); this.gotoLevel(this.currentLevel); },
-            }]);
+            }], false, earnedStars);
             this.showHomeOnOverlay();
         }
         };
@@ -1937,6 +2310,9 @@ export class GameManager extends Component {
 
     /** 通关演出：剩余泡泡逐个爆开（错峰），结束后回调 */
     private burstAllRemaining(done: () => void) {
+        // 收尾大爆破：给一次强震动，作为整关的情绪高点
+        this.shakeScreen(18);
+        this.haptic('heavy');
         const alive = this.bubbleList.filter((n) => {
             if (!n.isValid) return false;
             const c = n.getComponent(Bubble);
@@ -2008,6 +2384,10 @@ export class GameManager extends Component {
         const gray = new Color(138, 160, 182, 255);     // 次级文字
         const faint = new Color(168, 186, 204, 255);    // 描述文字
 
+        // 顶部两块卡片底：关卡名（中上）与右侧信息栏，避免文字直接浮在白底上
+        const cardTitle = this.makeHudCard(0, 616, 316, 56, 18);
+        const cardStats = this.makeHudCard(248, 556, 200, 176, 22);
+
         // ---- 顶部中央：关卡名（最大字号，加粗）----
         this.titleLabel = this.makeLabel('', 34, ink, new Vec3(0, 616, 0));
         this.titleLabel.node.getComponent(UITransform)!.setContentSize(420, 46);
@@ -2035,6 +2415,11 @@ export class GameManager extends Component {
         this.missLabel = this.makeLabel('Misses', 26, COLOR_GRAY, new Vec3(300, 566, 0));
         this.missLabel.node.getComponent(UITransform)!.setContentSize(180, 36);
         this.missLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        // 分数（右侧，失误点阵下方）
+        this.scoreLabel = this.makeLabel('', 24, new Color(120, 150, 178, 255), new Vec3(196, 498, 0));
+        this.scoreLabel.node.getComponent(UITransform)!.setContentSize(320, 32);
+        this.scoreLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
+        this.scoreLabel.isBold = true;
         const dots = new Node('MissDots');
         dots.layer = Layers.Enum.UI_2D;
         dots.addComponent(UITransform).setContentSize(120, 24);
@@ -2053,26 +2438,39 @@ export class GameManager extends Component {
         this.errLabel.node.getComponent(UITransform)!.setContentSize(680, 24);
 
         this.hudNodes = [
+            cardTitle, cardStats,
             this.titleLabel.node, this.subtitleLabel.node, this.descLabel.node,
             this.remainLabel.node, this.comboLabel.node, this.timerLabel.node,
-            this.missLabel.node, this.missDots.node,
+            this.missLabel.node, this.missDots.node, this.scoreLabel.node,
             this.targetHint.node, this.targetBar,
         ];
 
         // 左上角关卡内按钮：重新开始 + 返回主界面（竖排、放大）
         this.restartBtn = this.buildCornerButton('Restart', new Vec3(-258, 578, 0));
+        this.drawBtnIcon(this.restartBtn, 'restart', new Color(59, 123, 245, 255));
         this.restartBtn.on(Button.EventType.CLICK, () => {
             if (!this.restartBtn.active) return;
             this.gotoLevel(this.currentLevel);
         }, this);
         this.homeBtn = this.buildCornerButton('Home', new Vec3(-258, 506, 0), 'violet');
+        this.drawBtnIcon(this.homeBtn, 'home', new Color(124, 92, 255, 255));
         this.homeBtn.on(Button.EventType.CLICK, () => {
             if (!this.homeBtn.active) return;
             this.showTitle();
         }, this);
+        // 音乐 / 音效开关（左上按钮列下方，字号小一号以容纳文案）
+        this.musicBtn = this.buildCornerButton('Music On', new Vec3(-258, 434, 0), 'blue', 18);
+        this.drawBtnIcon(this.musicBtn, 'music', new Color(59, 123, 245, 255));
+        this.musicBtn.on(Button.EventType.CLICK, () => { this.toggleMusic(); }, this);
+        this.sfxBtn = this.buildCornerButton('Sound On', new Vec3(-258, 362, 0), 'violet', 18);
+        this.drawBtnIcon(this.sfxBtn, 'sound', new Color(124, 92, 255, 255));
+        this.sfxBtn.on(Button.EventType.CLICK, () => { this.toggleSfx(); }, this);
+        this.applyAudioSettings();
         // 初始隐藏（标题屏时由 showOverlay 统一管理）
         this.restartBtn.active = false;
         this.homeBtn.active = false;
+        this.musicBtn.active = false;
+        this.sfxBtn.active = false;
 
         this.buildTipCard();
         this.buildOverlay();
@@ -2296,7 +2694,7 @@ export class GameManager extends Component {
     }
 
     /** 左上角小按钮：圆角半透明背景 + 居中文字 */
-    private buildCornerButton(text: string, pos: Vec3, tint: 'blue' | 'violet' = 'blue'): Node {
+    private buildCornerButton(text: string, pos: Vec3, tint: 'blue' | 'violet' = 'blue', fontSize = 24): Node {
         const node = new Node('CornerBtn');
         node.layer = Layers.Enum.UI_2D;
         const w = 176, h = 56;
@@ -2313,17 +2711,97 @@ export class GameManager extends Component {
         const lbl = new Node('Label');
         lbl.layer = Layers.Enum.UI_2D;
         lbl.addComponent(UITransform).setContentSize(w, h);
-        lbl.setPosition(0, 0, 0);
+        lbl.setPosition(12, 0, 0);   // 给左侧图标留位置，文字略右移
         node.addChild(lbl);
         const label = lbl.addComponent(Label);
         label.string = text;
-        label.fontSize = 24;
-        label.lineHeight = 24;
+        label.fontSize = fontSize;
+        label.lineHeight = fontSize;
         label.isBold = true;
         label.color = textColor;
         label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER;
         return node;
+    }
+
+    /**
+     * HUD 卡片底：浅色圆角底 + 细描边，让顶部信息不再像"悬浮的文字"。
+     * 卡片会插在 HUD 节点之前，保证在文字下方。
+     */
+    private makeHudCard(x: number, y: number, w: number, h: number, r = 18): Node {
+        const node = new Node('HudCard');
+        node.layer = Layers.Enum.UI_2D;
+        node.addComponent(UITransform).setContentSize(w, h);
+        node.setPosition(x, y, 0);
+        const g = node.addComponent(Graphics);
+        g.fillColor = new Color(244, 248, 252, 235);
+        g.roundRect(-w / 2, -h / 2, w, h, r);
+        g.fill();
+        g.lineWidth = 1.5;
+        g.strokeColor = new Color(226, 236, 245, 255);
+        g.roundRect(-w / 2, -h / 2, w, h, r);
+        g.stroke();
+        this.node.addChild(node);
+        return node;
+    }
+
+    /** 按钮上的矢量小图标（不依赖字体）：restart/home/music/sound */
+    private drawBtnIcon(node: Node, kind: 'restart' | 'home' | 'music' | 'sound', color: Color) {
+        const icon = new Node('Icon');
+        icon.layer = Layers.Enum.UI_2D;
+        icon.addComponent(UITransform).setContentSize(28, 28);
+        icon.setPosition(-68, 0, 0);
+        const g = icon.addComponent(Graphics);
+        g.lineWidth = 2.6;
+        g.strokeColor = color;
+        g.fillColor = color;
+        if (kind === 'restart') {
+            // 逆时针圆弧 + 箭头
+            g.moveTo(Math.cos(-Math.PI * 0.35) * 8, Math.sin(-Math.PI * 0.35) * 8);
+            g.arc(0, 0, 8, -Math.PI * 0.35, Math.PI * 1.15, false);
+            g.stroke();
+            g.moveTo(4.5, 6.5);
+            g.lineTo(9, 9.6);
+            g.lineTo(9.6, 4.4);
+            g.close();
+            g.fill();
+        } else if (kind === 'home') {
+            g.moveTo(-9, 0);
+            g.lineTo(0, 8.5);
+            g.lineTo(9, 0);
+            g.stroke();
+            g.moveTo(-6.5, -1);
+            g.lineTo(-6.5, -8);
+            g.lineTo(6.5, -8);
+            g.lineTo(6.5, -1);
+            g.stroke();
+        } else if (kind === 'music') {
+            // 两个音符
+            g.moveTo(-2, -6);
+            g.lineTo(-2, 7);
+            g.lineTo(8, 9);
+            g.lineTo(8, -3);
+            g.stroke();
+            g.circle(-4.6, -6.8, 2.8);
+            g.fill();
+            g.circle(5.4, -3.8, 2.8);
+            g.fill();
+        } else {
+            // 喇叭 + 声波
+            g.moveTo(-8, -3);
+            g.lineTo(-3, -3);
+            g.lineTo(2, -8);
+            g.lineTo(2, 8);
+            g.lineTo(-3, 3);
+            g.lineTo(-8, 3);
+            g.close();
+            g.fill();
+            g.lineWidth = 2.2;
+            g.moveTo(5, -4);
+            g.arc(5, 0, 4.6, -Math.PI * 0.42, Math.PI * 0.42, false);
+            g.stroke();
+        }
+        node.addChild(icon);
     }
 
     private paintCorner(node: Node, w: number, h: number, fill: Color, stroke: Color) {
@@ -2422,6 +2900,14 @@ export class GameManager extends Component {
         this.overlayTitle = this.makeLabelOn(this.overlayCard, '', 48, new Color(72, 102, 132, 255), new Vec3(0, 180, 0));
         this.overlayTitle.node.getComponent(UITransform)!.setContentSize(480, 64);
         this.overlayTitle.overflow = Label.Overflow.SHRINK;
+        // 星级行（通关时显示，矢量绘制，不依赖字体里的星形字符）
+        this.starRow = new Node('StarRow');
+        this.starRow.layer = Layers.Enum.UI_2D;
+        this.starRow.addComponent(UITransform).setContentSize(240, 60);
+        this.starRow.setPosition(0, 238, 0);
+        this.starRowG = this.starRow.addComponent(Graphics);
+        this.overlayCard.addChild(this.starRow);
+        this.starRow.active = false;
         this.overlayDesc = this.makeLabelOn(this.overlayCard, '', 24, new Color(148, 168, 188, 255), new Vec3(0, 90, 0));
         this.overlayDesc.node.getComponent(UITransform)!.setContentSize(480, 140);
         this.overlayDesc.lineHeight = 34;
@@ -2545,8 +3031,17 @@ export class GameManager extends Component {
         }
     }
 
-    private showOverlay(title: string, desc: string, buttons: { label: string; action: () => void }[], compact = false) {
+    private showOverlay(title: string, desc: string, buttons: { label: string; action: () => void }[], compact = false, stars?: number) {
         this.drawOverlayCard(true, compact);
+        // 星级行：只在通关结算时显示（小窗模式下永远不显示）
+        if (this.starRow && this.starRow.isValid) {
+            if (!compact && typeof stars === 'number') {
+                this.drawStars(this.starRowG, stars);
+                this.starRow.active = true;
+            } else {
+                this.starRow.active = false;
+            }
+        }
         // 小窗模式用半透明深色背景，弱化“换页”观感
         if (this.overlayBg) {
             this.overlayBg.clear();
@@ -2603,6 +3098,8 @@ export class GameManager extends Component {
         // 遮罩显示时隐藏关卡内按钮
         this.restartBtn.active = false;
         this.homeBtn.active = false;
+        if (this.musicBtn) this.musicBtn.active = false;
+        if (this.sfxBtn) this.sfxBtn.active = false;
         this.btnA.active = buttons.length > 0;
         this.btnB.active = buttons.length > 1;
         this.labelA.string = buttons[0] ? buttons[0].label : '';
@@ -2625,6 +3122,8 @@ export class GameManager extends Component {
         if (this.playing) {
             this.restartBtn.active = true;
             this.homeBtn.active = true;
+            if (this.musicBtn) this.musicBtn.active = true;
+            if (this.sfxBtn) this.sfxBtn.active = true;
         }
         this.actionA = null;
         this.actionB = null;
@@ -2698,11 +3197,64 @@ export class GameManager extends Component {
             node.addComponent(UITransform).setContentSize(640, ROW_H);
             node.setPosition(0, y, 0);
             node.addComponent(Button);
+            // 卡片底：每关一行圆角卡片（按下有反馈），不再是纯文字行
+            const rg = node.addComponent(Graphics);
+            rg.fillColor = new Color(250, 252, 255, 255);
+            rg.roundRect(-320, -ROW_H / 2, 640, ROW_H - 8, 16);
+            rg.fill();
+            rg.lineWidth = 1.5;
+            rg.strokeColor = new Color(228, 238, 248, 255);
+            rg.roundRect(-320, -ROW_H / 2, 640, ROW_H - 8, 16);
+            rg.stroke();
+            node.on(Node.EventType.TOUCH_START, () => {
+                rg.clear();
+                rg.fillColor = new Color(238, 245, 254, 255);
+                rg.roundRect(-320, -ROW_H / 2, 640, ROW_H - 8, 16);
+                rg.fill();
+                rg.strokeColor = new Color(206, 226, 246, 255);
+                rg.roundRect(-320, -ROW_H / 2, 640, ROW_H - 8, 16);
+                rg.stroke();
+            }, this);
+            node.on(Node.EventType.TOUCH_END, () => {
+                rg.clear();
+                rg.fillColor = new Color(250, 252, 255, 255);
+                rg.roundRect(-320, -ROW_H / 2, 640, ROW_H - 8, 16);
+                rg.fill();
+                rg.strokeColor = new Color(228, 238, 248, 255);
+                rg.roundRect(-320, -ROW_H / 2, 640, ROW_H - 8, 16);
+                rg.stroke();
+            }, this);
             const label = this.makeLabelOn(node, `${cfg.num}`, 22,
                 new Color(86, 116, 146, 255), new Vec3(10, 0, 0));
             label.node.getComponent(UITransform)!.setContentSize(560, 40);
             label.overflow = Label.Overflow.CLAMP;
             label.horizontalAlign = Label.HorizontalAlign.LEFT;
+            // 每关的星级（用矢量星，避免字体缺字形）
+            const starsGot = (loadSave().stars || {})[String(i)] || 0;
+            const starNode = new Node(`Stars${i}`);
+            starNode.layer = Layers.Enum.UI_2D;
+            starNode.addComponent(UITransform).setContentSize(140, 28);
+            starNode.setPosition(-96, 0, 0);
+            const sg = starNode.addComponent(Graphics);
+            const R = 11, r2 = 4.6, gap = 30;
+            for (let k = 0; k < 3; k++) {
+                const cx = (k - 1) * gap;
+                const on = k < starsGot;
+                sg.fillColor = on ? new Color(255, 196, 46, 255) : new Color(232, 238, 245, 255);
+                sg.strokeColor = on ? new Color(240, 168, 26, 255) : new Color(216, 226, 236, 255);
+                sg.lineWidth = 1.4;
+                for (let t = 0; t < 10; t++) {
+                    const rad = t % 2 === 0 ? R : r2;
+                    const a = -Math.PI / 2 + (t * Math.PI) / 5;
+                    const px2 = cx + Math.cos(a) * rad;
+                    const py2 = Math.sin(a) * rad;
+                    if (t === 0) sg.moveTo(px2, py2); else sg.lineTo(px2, py2);
+                }
+                sg.close();
+                sg.fill();
+                sg.stroke();
+            }
+            node.addChild(starNode);
             const arrow = this.makeLabelOn(node, '›', 24, new Color(186, 202, 218, 255), new Vec3(300, 0, 0));
             arrow.node.getComponent(UITransform)!.setContentSize(40, 30);
             node.on(Button.EventType.CLICK, () => {

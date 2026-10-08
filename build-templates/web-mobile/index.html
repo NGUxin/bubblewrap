@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>Pop Bubbles</title>
+
+  <!--http://www.html5rocks.com/en/mobile/mobifying/-->
+  <meta name="viewport"
+        content="width=device-width,user-scalable=no,initial-scale=1,minimum-scale=1,maximum-scale=1,minimal-ui=true,viewport-fit=cover"/>
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="Pop Bubbles — pop every bubble in the color queue.">
+  <link rel="icon" href="data:,">
+
+  <!-- force webkit on 360 -->
+  <meta name="renderer" content="webkit"/>
+  <meta name="force-rendering" content="webkit"/>
+  <!-- force edge on IE -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+  <meta name="msapplication-tap-highlight" content="no"/>
+
+  <!-- force full screen on some browser -->
+  <meta name="full-screen" content="yes"/>
+  <meta name="x5-fullscreen" content="true"/>
+  <meta name="360-fullscreen" content="true"/>
+  <meta name="x5-page-mode" content="app">
+
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+
+  <!-- CrazyGames 技术规范：禁用文本选择/长按放大镜，桌面两侧留白用白底（与游戏背景一致） -->
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #ffffff;
+      color: #4a6b86;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #GameDiv, #Cocos3dGameContainer, #GameCanvas {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    /* 加载页：覆盖引擎与资源下载阶段，游戏就绪后淡出 */
+    #loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 26px;
+      background: #ffffff;
+      z-index: 20;
+      transition: opacity .45s ease;
+    }
+    #loader.done { opacity: 0; pointer-events: none; }
+    #loader .title {
+      font: 700 46px/1.2 -apple-system, "Helvetica Neue", Arial, sans-serif;
+      color: #3a5a74;
+      letter-spacing: .5px;
+    }
+    #loader .track {
+      width: min(58vw, 420px);
+      height: 10px;
+      border-radius: 999px;
+      background: #eef3f8;
+      overflow: hidden;
+    }
+    #loader .fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #63a4ff, #7c5cff);
+      transition: width .35s ease-out;
+    }
+    #loader .hint {
+      font: 400 16px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif;
+      color: #9fb3c6;
+    }
+  </style>
+
+</head>
+<body>
+  <div id="loader">
+    <div class="title">Pop Bubbles</div>
+    <div class="track"><div class="fill" id="loaderFill"></div></div>
+    <div class="hint" id="loaderHint">Loading…</div>
+  </div>
+  <div id="GameDiv" cc_exact_fit_screen="true">
+    <div id="Cocos3dGameContainer">
+      <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="99"></canvas>
+    </div>
+  </div>
+
+<!-- CrazyGames SDK v3：官方要求“必须在游戏代码之前加载”。
+     放在 body 里（而不是 head）是因为 SDK 初始化时会往 document.body 挂载容器，
+     在 head 执行时 body 还不存在会导致初始化卡住。 -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<script src="crazygames.js"></script>
+
+<!-- Polyfills bundle. -->
+<script src="src/polyfills.bundle.js" charset="utf-8"> </script>
+
+<!-- SystemJS support. -->
+<script src="src/system.bundle.js" charset="utf-8"> </script>
+
+<!-- Import map -->
+<script src="src/import-map.json" type="systemjs-importmap" charset="utf-8"> </script>
+
+<script>
+    System.import('./index.js').catch(function(err) { console.error(err); })
+</script>
+
+<script>
+  // 进度条：先按时间平滑推进到 ~92%，游戏发出就绪信号后补满并淡出。
+  (function () {
+    var fill = document.getElementById('loaderFill');
+    var hint = document.getElementById('loaderHint');
+    var box = document.getElementById('loader');
+    if (!fill || !box) return;
+    var t0 = Date.now();
+    var done = false;
+    var hints = ['Loading…', 'Warming up the bubbles…', 'Almost there…'];
+    var timer = setInterval(function () {
+      if (done) return;
+      var t = (Date.now() - t0) / 1000;
+      // ease-out：10 秒内推进到 92%
+      var pct = 92 * (1 - Math.exp(-t / 4.2));
+      fill.style.width = pct.toFixed(1) + '%';
+      var hi = Math.min(hints.length - 1, Math.floor(t / 3.5));
+      if (hint) hint.textContent = hints[hi];
+    }, 120);
+    function finish() {
+      if (done) return;
+      done = true;
+      clearInterval(timer);
+      fill.style.width = '100%';
+      if (hint) hint.textContent = 'Ready!';
+      setTimeout(function () { box.classList.add('done'); }, 220);
+      setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 800);
+    }
+    window.__popBubblesOnReady = finish;
+    if (window.__popBubblesReady) finish();
+  })();
+</script>
+
+</body>
+</html>
